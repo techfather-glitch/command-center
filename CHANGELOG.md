@@ -19,12 +19,26 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   upstreams opt in via `ALLOW_INSECURE_TLS` or `NODE_EXTRA_CA_CERTS`.
 - Bounded proxied upstream response sizes.
 
+### Fixed
+- Self-hosted icon proxy now accepts SVGs that ship an XML prolog / doctype
+  before `<svg>` (e.g. OPNsense), which were previously rejected and fell back to
+  monogram placeholders.
+
 ### Removed
 - Deleted a dead, Windows-only PowerShell "operator/watchdog" subsystem (~1,000
   lines) that was unreachable from the UI and errored on the Linux image, along
   with its `child_process` exec surface.
 
 ### Added
+- **Seven new providers** — Emby, Podman, Kubernetes, Incus/LXD, pfSense,
+  OPNsense and Unraid, each a data-driven descriptor with health, metrics and a
+  hero gauge. Brings first-class coverage to the container, virtualization,
+  firewall and NAS ecosystems.
+- **Provider write-actions** — control services from the dashboard, not just
+  watch them: Sonarr/Radarr RSS-sync and search-missing, SABnzbd pause/resume,
+  qBittorrent pause-all/resume-all. Actions run through the same authenticated,
+  audited server pipeline; the client only ever names a declared action, never a
+  URL, and confirm/danger actions gate before firing.
 - **Guided first-run setup** — a fresh install walks through the basics, an
   optional dashboard password, and connecting the first provider, then enters
   the dashboard. Re-runnable from Settings → General.

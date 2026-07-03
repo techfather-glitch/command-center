@@ -2849,6 +2849,8 @@ const ICON_RULES = [
     [/profilarr/, 'prowlarr'], [/sab(nzbd)?/, 'sabnzbd'], [/qbit|qbt|torrent/, 'qbittorrent'],
     [/slskd|soulseek/, 'slskd'], [/home.?assist|hass/, 'home-assistant'], [/truenas|\bnas\b/, 'truenas-scale'],
     [/portainer/, 'portainer'], [/dockge/, 'dockge'], [/dozzle/, 'dozzle'], [/dockhand/, 'docker'],
+    [/podman/, 'podman'], [/kubernetes|k8s|k3s/, 'kubernetes'], [/incus|\blxd\b/, 'incus'],
+    [/opnsense/, 'opnsense'], [/pfsense/, 'pfsense'], [/unraid/, 'unraid'],
     [/nginx|proxy.?manager|npm/, 'nginx-proxy-manager'], [/grafana/, 'grafana'], [/prometheus/, 'prometheus'],
     [/\bloki\b/, 'loki'], [/node.?exporter/, 'prometheus'],
     [/seer|overseer/, 'overseerr'], [/jellyseer/, 'jellyseerr'], [/tautulli|tracearr/, 'tautulli'],
@@ -5312,6 +5314,26 @@ async function igSave(id, enable) {
 }
 window.igSaveEnable = async function (id) { if (await igSave(id, true)) { await refreshIntegrations(); await refreshWidget(id); render(); const ob = document.getElementById('onboard'); if (ob && !ob.hidden) renderOnboard(); const d = (Store.integrations || []).find(x => x.id === id); toast((d ? d.title : 'Integration') + ' enabled ✓'); } };
 window.igDisable = async function (id) { const s = Store.settings || {}; const integrations = Object.assign({}, s.integrations); integrations[id] = Object.assign({}, integrations[id], { enabled: false }); if (await saveSettings({ integrations }, 'Disabling…')) { await refreshIntegrations(); render(); toast('Disabled'); } };
+/* Run one declared provider write-action (RSS sync, pause queue, resume torrents…)
+   through the server's authenticated action pipeline. The server holds the creds;
+   this only names the provider + action id (+ any params). Confirm-gated actions
+   ask first; danger actions render red. */
+window.runProviderAction = async function (id, actionId) {
+    const cat = (Store.integrations || []).find(x => x.id === id);
+    const act = cat && (cat.actions || []).find(a => a.id === actionId);
+    if (!act) return;
+    if (act.confirm && !confirm(`Run "${act.label}" on ${cat.title}? This affects the live service.`)) return;
+    const params = {};
+    for (const pr of (act.params || [])) { const v = prompt((pr.label || pr.name) + ':'); if (v == null) return; params[pr.name] = v; }
+    const el = document.getElementById('ptest_' + cssId(id));
+    const say = (t, cls) => { if (el) { el.textContent = t; el.className = 'ig-test-res' + (cls ? ' ' + cls : ''); } else if (cls !== null) toast(t); };
+    say(act.label + '…', '');
+    try {
+        const r = await jpost('/api/integration/action', { type: id, action: actionId, params });
+        say(r.ok ? '✓ ' + act.label : '✗ ' + (r.error || 'failed'), r.ok ? 'ok' : 'bad');
+        if (r.ok) toast(act.label + ' sent');
+    } catch (e) { say('✗ ' + e.message, 'bad'); }
+};
 /* Dropped Needle "Sign in with Plex": DN mints a plex.tv PIN, the user approves it
    in their Plex account, we poll until DN issues its session token (stored server-
    side in the vault — it never reaches this page). */
@@ -5535,6 +5557,7 @@ function providerCard(p) {
         <div class="pv-acts">
             <button class="tbtn" onclick="openProviderCfg('${esc(p.id)}')">Configure</button>
             <button class="tbtn" onclick="testProvider('${esc(p.id)}')">Test</button>
+            ${cat && cat.enabled && cat.actions ? cat.actions.map(a => `<button class="tbtn${a.danger ? ' danger' : ''}" onclick="runProviderAction('${esc(p.id)}','${esc(a.id)}')" title="Control action">${esc(a.label)}</button>`).join('') : ''}
             ${cat && cat.enabled ? `<button class="tbtn danger" onclick="igDisable('${esc(p.id)}')">Disable</button>` : ''}
             ${p.links && p.links.open ? `<button class="tbtn" onclick="window.open('${esc(p.links.open)}','_blank','noopener')">Open ↗</button>` : ''}
             <span class="ig-test-res" id="ptest_${cssId(p.id)}"></span>
