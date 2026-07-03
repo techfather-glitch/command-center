@@ -1996,12 +1996,72 @@ function demoContainers() {
     ];
     return { list, count: list.length, cores: 16, ts: Date.now() };
 }
+// Synthetic catalog-widget + Docker data so DEMO mode showcases every concept —
+// AI (Ollama), Smart Home (Home Assistant), the *Arr pipeline, media, and the
+// live container log floor — with no real upstream. These ids read as "enabled".
+const DEMO_ENABLED = new Set(['ollama', 'homeassistant', 'sonarr', 'radarr', 'sabnzbd', 'qbittorrent', 'plex', 'jellyfin', 'tautulli', 'proxmox', 'adguard', 'prometheus', 'immich']);
+function demoDockerContainers() {
+    const rows = demoContainers().list.map((c, i) => ({
+        id: 'demo' + ('0' + (i + 10)).slice(-2) + c.name.replace(/[^a-z0-9]/gi, '').slice(0, 12),
+        name: c.name, image: c.image, state: 'running', status: 'Up ' + (2 + i) + ' day' + (i === 0 ? '' : 's'),
+        cpuPct: c.cpuPct, mem: c.mem, memLimit: c.memLimit, netRx: c.netRx, netTx: c.netTx
+    }));
+    rows.push({ id: 'demo99resticbak', name: 'ix-backup-restic-1', image: 'restic/restic:latest', state: 'exited', status: 'Exited (0) 3 hours ago', cpuPct: 0, mem: 0, memLimit: 4 * 1024 * 1024 * 1024, netRx: 0, netTx: 0 });
+    return rows;
+}
+function demoDockerLogs() {
+    const now = Date.now();
+    const T = (s) => new Date(now - s * 1000).toISOString().replace('T', ' ').slice(0, 19);
+    return [
+        [420, 'INFO ', 'starting up — version 1.42.0 (build 8f3c1a)'],
+        [372, 'INFO ', 'configuration loaded from /config'],
+        [318, 'INFO ', 'listening on 0.0.0.0'],
+        [244, 'INFO ', 'connected to database in 42ms'],
+        [176, 'WARN ', 'slow query (318ms): SELECT * FROM history ORDER BY ts DESC LIMIT 500'],
+        [120, 'INFO ', 'scheduled task complete: 128 items processed'],
+        [64, 'INFO ', 'health check ok'],
+        [28, 'INFO ', 'request GET /api/status -> 200 in 3ms'],
+        [6, 'INFO ', 'request GET /api/health -> 200 in 1ms']
+    ].map(([s, lvl, msg]) => `[${T(s)}] ${lvl} ${msg}`).join('\n');
+}
+function demoWidget(type) {
+    const W = {
+        ollama: { fields: [{ label: 'Models', value: 5, kind: 'stat' }, { label: 'Loaded', value: 2, kind: 'stat', state: 'good' }, { label: 'On disk', value: '28.4 GB', kind: 'text' }, { label: 'VRAM in use', value: '11.2 GB', kind: 'text', state: 'good' }], items: [{ label: 'llama3.1:8b', sub: '8.0B · Q4_K_M', value: 'loaded', state: 'good' }, { label: 'qwen2.5-coder:14b', sub: '14.8B · Q4_K_M', value: 'loaded', state: 'good' }, { label: 'mistral-small:24b', sub: '24B · Q4_K_M', value: '14.3 GB', state: 'idle' }, { label: 'nomic-embed-text:latest', sub: '137M · F16', value: '0.3 GB', state: 'idle' }, { label: 'llava:13b', sub: '13B · Q4_0', value: '8.0 GB', state: 'idle' }], version: '0.5.4' },
+        homeassistant: { gauge: { label: 'Available', value: 99, max: 100, unit: '%', state: 'good' }, fields: [{ label: 'Lights on', value: '4/11', kind: 'text', state: 'good' }, { label: 'Switches on', value: 3, kind: 'stat', state: 'good' }, { label: 'Climate', value: 2, kind: 'stat' }, { label: 'Locks', value: '2/2', kind: 'text', state: 'good' }, { label: 'People home', value: 2, kind: 'stat', state: 'good' }, { label: 'Entities', value: 214, kind: 'stat' }], items: [{ label: 'Garage Door', sub: 'open', value: 'open', state: 'warn' }], version: '2026.6.1' },
+        sonarr: { fields: [{ label: 'Queue', value: 2, kind: 'stat' }, { label: 'Missing', value: 5, kind: 'stat', state: 'warn' }] },
+        radarr: { fields: [{ label: 'Queue', value: 1, kind: 'stat' }, { label: 'Missing', value: 3, kind: 'stat', state: 'warn' }] },
+        sabnzbd: { fields: [{ label: 'Speed', value: Math.round(dwave(6000, 4000, 6000)) + ' KB/s', kind: 'text', state: 'good' }, { label: 'Queue', value: 3, kind: 'stat' }, { label: 'Left', value: '2.4 GB', kind: 'text' }] },
+        qbittorrent: { fields: [{ label: 'Download', value: Math.max(0, Math.round(dwave(9000, 3e6, 5e6))), kind: 'rate', state: 'good' }, { label: 'Upload', value: Math.max(0, Math.round(dwave(7000, 8e5, 1.2e6))), kind: 'rate' }, { label: 'Torrents', value: '3/24', kind: 'text' }], items: [{ label: 'ubuntu-24.04.1-desktop-amd64.iso', sub: '68%', state: 'good' }, { label: 'debian-12.7.0-amd64-DVD-1.iso', sub: '31%', state: 'good' }] },
+        plex: { fields: [{ label: 'Streams', value: 3, kind: 'stat', state: 'good' }], items: [{ label: 'The Shining', sub: 'alex · direct play', state: 'good' }, { label: 'Dune: Part Two', sub: 'sam · transcode', state: 'good' }, { label: 'Severance — S01E03', sub: 'jodie · direct play', state: 'good' }] },
+        jellyfin: { fields: [{ label: 'Streams', value: 1, kind: 'stat', state: 'good' }, { label: 'Devices', value: 6, kind: 'stat' }] },
+        tautulli: { fields: [{ label: 'Streams', value: 3, kind: 'stat', state: 'good' }, { label: 'Bandwidth', value: '48 Mbps', kind: 'text' }, { label: 'Transcodes', value: 1, kind: 'stat' }] },
+        proxmox: { gauge: { label: 'CPU', value: Math.max(0, Math.round(dwave(11000, 12, 24))), max: 100, unit: '%', state: 'good' }, fields: [{ label: 'VMs/LXC', value: '11/12', kind: 'text', state: 'warn' }, { label: 'Nodes', value: '3/3', kind: 'text' }, { label: 'Memory', value: '61%', kind: 'text' }] },
+        adguard: { gauge: { label: 'Blocked', value: 18, max: 100, unit: '%', state: 'good' }, fields: [{ label: 'Queries', value: 84213, kind: 'stat' }, { label: 'Blocked', value: 15380, kind: 'stat', state: 'warn' }, { label: 'Protection', value: 'On', kind: 'text', state: 'good' }] },
+        prometheus: { gauge: { label: 'Targets up', value: 96, max: 100, unit: '%', state: 'warn' }, fields: [{ label: 'Targets', value: '24/25', kind: 'text', state: 'warn' }] },
+        immich: { fields: [{ label: 'Photos', value: 48210, kind: 'stat' }, { label: 'Videos', value: 3120, kind: 'stat' }, { label: 'Users', value: 4, kind: 'stat' }] }
+    };
+    const w = W[type];
+    if (!w) return { ok: false, error: 'demo: no synthetic data for ' + type };
+    return Object.assign({ ok: true }, w);
+}
 async function demoRoute(req, res) {
     const send = obj => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
     const u = req.url.split('?')[0];
     if (u === '/api/status') { send({ services: demoStatus(), timestamp: Date.now() }); return true; }
     if (u === '/api/unifi/status') { send(demoUnifi()); return true; }
     if (u === '/api/containers/summary') { send(demoContainers()); return true; }
+    if (u === '/api/docker/containers') { send({ configured: true, containers: demoDockerContainers() }); return true; }
+    if (u === '/api/docker/logs') { send({ logs: demoDockerLogs() }); return true; }
+    if (u === '/api/widget' && req.method === 'POST') {
+        const body = await readJsonBody(req).catch(() => ({}));
+        const w = demoWidget(body && body.type);
+        if (body && body.test) { send({ type: body && body.type, ok: w.ok !== false, sample: { demo: true } }); return true; }
+        send(Object.assign({ type: body && body.type }, w, { updatedAt: Date.now() })); return true;
+    }
+    if (u === '/api/integration/action' && req.method === 'POST') {
+        const body = await readJsonBody(req).catch(() => ({}));
+        send({ type: body && body.type, ok: true, status: 200, demo: true }); return true;
+    }
     if (u === '/api/live' && req.method === 'POST') {
         const body = await readJsonBody(req).catch(() => ({}));
         const svc = body && body.service;
@@ -2449,8 +2509,8 @@ const server = http.createServer(async (req, res) => {
             // Expose write-actions (metadata only — never how they authenticate) so the
             // provider card can render control buttons.
             actions: (d.actions || []).map(a => ({ id: a.id, label: a.label, confirm: !!a.confirm, danger: !!a.danger, params: a.params || [] })),
-            enabled: !!(settings.integrations && settings.integrations[d.id] && settings.integrations[d.id].enabled),
-            url: storedEndpoint(d.id) || ''
+            enabled: (DEMO && DEMO_ENABLED.has(d.id)) || !!(settings.integrations && settings.integrations[d.id] && settings.integrations[d.id].enabled),
+            url: (DEMO && DEMO_ENABLED.has(d.id)) ? (d.defaultUrl || '') : (storedEndpoint(d.id) || '')
         }));
         jsonRes(res, 200, cat);
     } else if (req.url === '/api/widget' && req.method === 'POST') {
