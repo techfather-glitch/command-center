@@ -4,8 +4,6 @@ dashboard-settings.json
 dashboard-secrets.json
 dashboard-secret.key
 dashboard-audit.log
-operator-state.json
-operator-events.jsonl
 services.json
 
 # ── local env & secrets ──

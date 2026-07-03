@@ -80,6 +80,7 @@ All configuration is via environment variables. None are required.
 | `DASHBOARD_PASSWORD_FILE` | off | Read the password from a file (Docker secrets). |
 | `PUBLIC_URL` | — | Canonical external origin when behind a proxy, e.g. `https://cc.example.com`. |
 | `TRUST_PROXY` | `1` | Honor `X-Forwarded-*` headers. Set `0` for a direct, untrusted bind. |
+| `ALLOW_INSECURE_TLS` | off | `1` skips outbound TLS verification for self-signed upstreams (UniFi/TrueNAS/Proxmox). Prefer `NODE_EXTRA_CA_CERTS` with a CA bundle. |
 | `DASHBOARD_SECRET_KEY` / `_FILE` | auto | 32-byte key for the secret vault. Auto-generated and persisted if unset. |
 
 Persisted state (settings, the encrypted vault, the audit log, the icon cache)

@@ -37,9 +37,9 @@ Out of scope:
 - Vulnerabilities in the third-party services you connect (report those
   upstream).
 - Issues that require an already-compromised host or a malicious LAN operator.
-- The relaxed TLS verification for self-signed LAN providers — this is a
-  documented, deliberate trade-off for homelab use. If you have a cleaner design
-  (per-endpoint opt-in verification), that's a welcome contribution.
+- Outbound TLS verification is **on by default**. Skipping it for self-signed
+  homelab upstreams is strictly opt-in (`ALLOW_INSECURE_TLS=1`, or supply a CA
+  bundle via `NODE_EXTRA_CA_CERTS`) — not a default trade-off.
 
 ## Hardening checklist for operators
 

@@ -6,6 +6,24 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+- Password hashing upgraded from SHA-256 to **scrypt** (salted, work-factored,
+  built-in); legacy digests upgrade transparently on next login. Minimum length
+  raised to 12.
+- Added a strict **Content-Security-Policy** and hardening headers
+  (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, HSTS-behind-TLS).
+- Session cookie is now **`SameSite=Strict`**; added `POST /api/logout` and
+  session-token rotation on password change; the CSRF gate now requires a
+  positive same-origin signal on POSTs.
+- Outbound **TLS certificate verification is on by default**; self-signed
+  upstreams opt in via `ALLOW_INSECURE_TLS` or `NODE_EXTRA_CA_CERTS`.
+- Bounded proxied upstream response sizes.
+
+### Removed
+- Deleted a dead, Windows-only PowerShell "operator/watchdog" subsystem (~1,000
+  lines) that was unreachable from the UI and errored on the Linux image, along
+  with its `child_process` exec surface.
+
 ### Added
 - **Guided first-run setup** — a fresh install walks through the basics, an
   optional dashboard password, and connecting the first provider, then enters

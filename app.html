@@ -2181,7 +2181,6 @@ const Store = {
     widgets: {},        // integration id -> normalized widget data
     unifi: null,
     truenas: null,
-    operator: null,
     host: null,       // parsed node-exporter host metrics
     containers: null, // parsed cAdvisor containers
     qbt: null,
@@ -2419,7 +2418,6 @@ async function refreshUnifi() {
     }
 }
 async function refreshTrueNas() { try { Store.truenas = await jpost('/api/live', { service: 'TrueNAS Web UI' }); if (!Store.truenas.error) markFresh('truenas'); } catch (e) { Store.truenas = { error: e.message }; } }
-async function refreshOperator() { try { Store.operator = await jget('/api/operator'); } catch (e) { Store.operator = { error: e.message }; } }
 async function refreshHost() { try { const d = await jpost('/api/live', { service: 'Node Exporter' }); Store.host = d.raw ? parseHostMetrics(d.raw) : { error: errText(d.error) || 'no metrics' }; if (d.raw) markFresh('host'); } catch (e) { Store.host = { error: e.message }; } }
 /* Server-parsed cAdvisor: /api/containers/summary ships a ~2KB list (CPU% deltas
    come from server-persistent counters), not the raw 1.4MB scrape. */
@@ -3067,7 +3065,7 @@ window.obSetPassword = async function () {
     const pw = gv('obPw'), pw2 = gv('obPw2');
     const msg = document.getElementById('obPwMsg');
     const say = (t, bad) => { if (msg) { msg.textContent = t; msg.className = 'ob-msg' + (bad ? ' bad' : ' ok'); } };
-    if (pw.length < 6) { say('Password must be at least 6 characters.', true); return; }
+    if (pw.length < 12) { say('Use at least 12 characters — a passphrase works well.', true); return; }
     if (pw !== pw2) { say('Passwords don\'t match.', true); return; }
     try {
         const r = await jpost('/api/setup/password', { password: pw });
@@ -5458,7 +5456,7 @@ function securityLedger() {
         ['ok', 'CSRF protection', 'Cross-origin state-changing requests are rejected and journaled', 'Enforced'],
         ['ok', 'Rate limiting', 'Per-IP token bucket on every route · scanners get 429', 'Enforced'],
         ['ok', 'SSRF hardening', 'Fetch targets resolve from server config only · port probes limited to the LAN', 'Enforced'],
-        ['ok', 'Audit log', 'Settings, container and operator actions are journaled — never the values', 'On'],
+        ['ok', 'Audit log', 'Settings, container and auth actions are journaled — never the values', 'On'],
         (Store.meta && Store.meta.authEnabled)
             ? ['ok', 'Authentication', 'Password gate active — every API call requires a signed-in session (HttpOnly, 12h)', 'Enforced']
             : ['warn', 'Authentication', 'Optional password gate — set DASHBOARD_PASSWORD on the server to require a login on every API call', 'Opt-in']

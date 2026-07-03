@@ -86,13 +86,19 @@ TrueNAS) are supported via optional descriptors on the provider — see the
 Authentication is **opt-in and env-gated** so a trusted-LAN deployment isn't
 forced to log in, while a public deployment can require it:
 
-- Set `DASHBOARD_PASSWORD` (or `DASHBOARD_PASSWORD_FILE`) to require a session.
-- `POST /api/login` verifies with a timing-safe comparison and issues an
-  `HttpOnly`, `SameSite=Lax` session cookie (auto-`Secure` behind TLS).
-- Every `/api/*` route (except the SSE stream handshake) then requires a valid
-  session. Sessions are in-memory with a 12h TTL.
+- Set `DASHBOARD_PASSWORD` (or `DASHBOARD_PASSWORD_FILE`), or set a password in
+  first-run setup, to require a session.
+- Passwords are hashed with **scrypt** (built-in, salted, work-factored — no
+  invented crypto), stored inside the AES-256-GCM vault; a 12-character minimum
+  applies.
+- `POST /api/login` verifies with a constant-time comparison and issues an
+  `HttpOnly`, `SameSite=Strict` session cookie (auto-`Secure` behind TLS).
+  `POST /api/logout` revokes it; the token rotates when the password changes.
+- Every `/api/*` route (except the SSE stream handshake and `/api/meta`
+  liveness) then requires a valid session. Sessions are in-memory with a 12h TTL.
 
-Multi-user accounts, a first-run admin-creation wizard and password reset are on
+A first-run setup flow guides the basics, an optional password, and the first
+provider. Multi-user accounts and password reset are on
 the [roadmap](ROADMAP.md).
 
 ## Realtime updates (SSE)
@@ -130,10 +136,17 @@ It never needs to be served over plain HTTP to function. See
 
 - **Secret vault** — AES-256-GCM at rest, key file mode `0600`.
 - **Redaction** — API responses return `***`, never real secret values.
-- **CSRF** — cross-origin state-changing requests are rejected and journaled.
+- **Password hashing** — scrypt (salted, work-factored), inside the vault.
+- **CSP + hardening headers** — the document ships a strict Content-Security-
+  Policy plus `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+  and HSTS behind TLS.
+- **CSRF** — cross-origin state-changing requests are rejected and journaled;
+  the session cookie is `SameSite=Strict`.
+- **Outbound TLS** — certificate verification is **on by default**; self-signed
+  homelab upstreams opt in via `ALLOW_INSECURE_TLS=1` or a CA bundle.
 - **Rate limiting** — per-IP token bucket (loopback exempt).
 - **SSRF hardening** — fetch targets resolve from server config only; port
-  probes are restricted to private ranges.
+  probes are restricted to private ranges; proxied response sizes are bounded.
 - **Audit journal** — settings/container/auth actions are appended to an
   audit log (the *fact*, never the values).
 

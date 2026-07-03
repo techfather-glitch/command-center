@@ -8,10 +8,8 @@ const os = require('os');
 const dns = require('dns').promises;
 const tls = require('tls');
 const https = require('https');
-const { execFile } = require('child_process');
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8888;
-const WORKSPACE_ROOT = path.resolve(__dirname, '..');
 const APP_VERSION = '2.0.0-gauge';
 const SERVER_STARTED_AT = Date.now();
 // Writable state (settings, the encrypted vault, the audit log) lives under
@@ -23,8 +21,6 @@ const DASHBOARD_PATH = path.join(__dirname, 'app.html');
 const ICON_DIR = path.join(__dirname, 'assets', 'icons');
 const FONT_DIR = path.join(__dirname, 'assets', 'fonts');
 const SETTINGS_PATH = path.join(DATA_DIR, 'dashboard-settings.json');
-const OPERATOR_STATE_PATH = path.join(DATA_DIR, 'operator-state.json');
-const OPERATOR_EVENTS_PATH = path.join(DATA_DIR, 'operator-events.jsonl');
 
 function readDashboardSettings() {
     try {
@@ -242,7 +238,7 @@ function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cooki
             method,
             headers,
             timeout: 10000,
-            ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: false }) } : {})
+            ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: !ALLOW_INSECURE_TLS }) } : {})
         };
         const req = lib.request(target, options, (r) => {
             let data = '';
@@ -274,7 +270,6 @@ function safeUnifiSettings(settings) {
         site: String(u.site || 'default').trim() || 'default'
     };
 }
-
 
 function unifiDeviceKind(device) {
     const type = String(device.type || device.device_type || '').toLowerCase();
@@ -581,7 +576,6 @@ async function queryUnifiStatus() {
     }
 }
 
-
 // Ships empty: Command Center has no idea what's on your network until you tell it.
 // Add services in Settings → Fleet & probes (persisted, encrypted), or drop a
 // `services.json` next to this file for declarative/GitOps setups. In DEMO mode a
@@ -685,7 +679,7 @@ function liveFetch({ baseUrl, path, key, probe }) {
         }
         const req = lib.get(url, { headers, timeout: 8000 }, (r) => {
             let data = '';
-            r.on('data', c => data += c);
+            r.on('data', c => { data += c; if (data.length > 8e6) req.destroy(new Error('response too large')); });   // bound a misbehaving upstream
             r.on('end', () => {
                 let parsed = {};
                 try { parsed = data ? JSON.parse(data) : {}; } catch (_) { parsed = { raw: data.slice(0, 1500000) }; }
@@ -857,7 +851,7 @@ function fetchTextUrl(url, timeoutMs = 10000) {
         const req = lib.get(url, { headers: { 'User-Agent': 'dashboard-server/1.0' }, timeout: timeoutMs }, (r) => {
             if (r.statusCode < 200 || r.statusCode >= 300) { r.resume(); reject(new Error(`HTTP ${r.statusCode}`)); return; }
             let data = '';
-            r.on('data', c => data += c);
+            r.on('data', c => { data += c; if (data.length > 8e6) req.destroy(new Error('response too large')); });   // bound a misbehaving upstream
             r.on('end', () => resolve(data));
         });
         req.on('timeout', () => req.destroy(new Error('timeout')));
@@ -1285,1071 +1279,6 @@ function readJsonBody(req, limit = 16384) {
     });
 }
 
-function powershellJson(script, timeout = 8000) {
-    return new Promise((resolve) => {
-        execFile(
-            'powershell.exe',
-            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
-            { timeout, windowsHide: true, maxBuffer: 1024 * 1024 },
-            (err, stdout) => {
-                if (err) {
-                    resolve({ error: err.message });
-                    return;
-                }
-                try {
-                    resolve(JSON.parse(stdout || '[]'));
-                } catch (parseErr) {
-                    resolve({ error: parseErr.message, raw: stdout });
-                }
-            }
-        );
-    });
-}
-
-async function scheduledTaskSnapshot() {
-    const script = `
-$names = @('Gateway','Gateway Watchdog','Dashboard Watchdog')
-$items = foreach ($name in $names) {
-    try {
-        $task = Get-ScheduledTask -TaskName $name -ErrorAction Stop
-        $info = $task | Get-ScheduledTaskInfo
-        $last = if ($info.LastRunTime -and $info.LastRunTime.Year -gt 2000) { $info.LastRunTime.ToString('o') } else { $null }
-        $next = if ($info.NextRunTime -and $info.NextRunTime.Year -gt 2000) { $info.NextRunTime.ToString('o') } else { $null }
-        [pscustomobject]@{
-            name = $name
-            state = [string]$task.State
-            hidden = [bool]$task.Settings.Hidden
-            lastRunTime = $last
-            nextRunTime = $next
-            lastTaskResult = $info.LastTaskResult
-            missedRuns = $info.NumberOfMissedRuns
-            restartCount = $task.Settings.RestartCount
-            restartInterval = [string]$task.Settings.RestartInterval
-            startWhenAvailable = [bool]$task.Settings.StartWhenAvailable
-        }
-    } catch {
-        [pscustomobject]@{
-            name = $name
-            state = 'Missing'
-            error = $_.Exception.Message
-        }
-    }
-}
-$items | ConvertTo-Json -Depth 4
-`;
-    const out = await powershellJson(script);
-    if (Array.isArray(out)) return out;
-    if (out && out.name) return [out];
-    return [{ name: 'Scheduled task query', state: 'Error', error: out.error || 'Unable to read task state' }];
-}
-
-function readWatchdogEvents() {
-    const logDir = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'Temp', 'command-center');
-    const logs = [
-        { source: 'Gateway watchdog', file: path.join(logDir, 'gateway-watchdog.log') },
-        { source: 'Dashboard watchdog', file: path.join(logDir, 'dashboard-watchdog.log') }
-    ];
-    const events = [];
-    for (const log of logs) {
-        try {
-            if (!fs.existsSync(log.file)) continue;
-            const lines = fs.readFileSync(log.file, 'utf8').split(/\r?\n/).filter(Boolean).slice(-30);
-            for (const line of lines) {
-                const match = line.match(/^\[([^\]]+)\]\s*(.*)$/);
-                const when = match ? match[1] : '';
-                const message = match ? match[2] : line;
-                events.push({
-                    source: log.source,
-                    timestamp: when ? new Date(when.replace(' ', 'T')).toISOString() : null,
-                    message
-                });
-            }
-        } catch (err) {
-            events.push({ source: log.source, timestamp: null, message: `Could not read log: ${err.message}` });
-        }
-    }
-    return events
-        .sort((a, b) => (Date.parse(b.timestamp || 0) || 0) - (Date.parse(a.timestamp || 0) || 0))
-        .slice(0, 12);
-}
-
-function readOperatorState() {
-    try {
-        if (!fs.existsSync(OPERATOR_STATE_PATH)) return {};
-        const parsed = JSON.parse(fs.readFileSync(OPERATOR_STATE_PATH, 'utf8'));
-        return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch (_) {
-        return {};
-    }
-}
-
-function writeOperatorState(state) {
-    try {
-        ensureParentDir(OPERATOR_STATE_PATH);
-        atomicWriteJson(OPERATOR_STATE_PATH, state || {});
-    } catch (err) {
-        console.warn('Failed to write operator state:', err.message);
-    }
-}
-
-function appendOperatorEvent(event) {
-    try {
-        ensureParentDir(OPERATOR_EVENTS_PATH);
-        fs.appendFileSync(OPERATOR_EVENTS_PATH, JSON.stringify({
-            source: 'Operator guardrail',
-            timestamp: new Date().toISOString(),
-            ...event
-        }) + '\n');
-    } catch (err) {
-        console.warn('Failed to write operator event:', err.message);
-    }
-}
-
-function readOperatorEvents(limit = 20) {
-    try {
-        if (!fs.existsSync(OPERATOR_EVENTS_PATH)) return [];
-        return fs.readFileSync(OPERATOR_EVENTS_PATH, 'utf8')
-            .split(/\r?\n/)
-            .filter(Boolean)
-            .slice(-limit)
-            .map(line => {
-                try { return JSON.parse(line); } catch (_) { return null; }
-            })
-            .filter(Boolean);
-    } catch (_) {
-        return [];
-    }
-}
-
-function pathSize(filePath) {
-    try {
-        return fs.existsSync(filePath) ? fs.statSync(filePath).size : 0;
-    } catch (_) {
-        return 0;
-    }
-}
-
-function directoryStats(root, maxFiles = 3000) {
-    const stats = { path: root, exists: false, files: 0, dirs: 0, bytes: 0, truncated: false };
-    try {
-        if (!root || !fs.existsSync(root)) return stats;
-        stats.exists = true;
-        const stack = [root];
-        while (stack.length && stats.files < maxFiles) {
-            const dir = stack.pop();
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                const fullPath = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                    stats.dirs += 1;
-                    stack.push(fullPath);
-                } else if (entry.isFile()) {
-                    stats.files += 1;
-                    stats.bytes += pathSize(fullPath);
-                    if (stats.files >= maxFiles) {
-                        stats.truncated = true;
-                        break;
-                    }
-                }
-            }
-        }
-    } catch (err) {
-        stats.error = err.message;
-    }
-    return stats;
-}
-
-async function housekeepingSnapshot() {
-    const tempGateway = path.join(process.env.LOCALAPPDATA || os.tmpdir(), 'Temp', 'command-center');
-    const localTemp = path.join(__dirname, '.tmp');
-    const runtimeDir = path.join(DATA_DIR, 'runtime-state');
-    const drive = await powershellJson(`Get-PSDrive -Name C | Select-Object Name,Used,Free,@{n='Total';e={$_.Used+$_.Free}} | ConvertTo-Json -Compress`, 6000);
-    const driveFreePct = drive && Number(drive.Total)
-        ? Math.round((Number(drive.Free || 0) / Number(drive.Total)) * 100)
-        : null;
-    const targets = [
-        { label: 'Temp logs', ...directoryStats(tempGateway) },
-        { label: 'Dashboard temp', ...directoryStats(localTemp) },
-        { label: 'Runtime state', ...directoryStats(runtimeDir) }
-    ];
-    const eventLogBytes = pathSize(OPERATOR_EVENTS_PATH);
-    const alerts = [];
-    if (Number.isFinite(Number(driveFreePct)) && Number(driveFreePct) < 15) alerts.push(`C: drive has ${driveFreePct}% free.`);
-    for (const target of targets) {
-        if (target.bytes > 1024 * 1024 * 1024) alerts.push(`${target.label} is ${Math.round(target.bytes / 1024 / 1024)} MB.`);
-        if (target.truncated) alerts.push(`${target.label} has more files than the quick scan limit.`);
-        if (target.error) alerts.push(`${target.label} scan failed: ${target.error}`);
-    }
-    if (eventLogBytes > 5 * 1024 * 1024) alerts.push('Operator event log is over 5 MB.');
-    return {
-        ok: alerts.length === 0,
-        state: alerts.length ? 'warn' : 'good',
-        drive: drive && !drive.error ? {
-            name: drive.Name || 'C',
-            free: Number(drive.Free || 0),
-            used: Number(drive.Used || 0),
-            total: Number(drive.Total || 0),
-            freePct: driveFreePct
-        } : { error: drive?.error || 'Drive check unavailable' },
-        targets,
-        eventLogBytes,
-        alerts
-    };
-}
-
-async function processHygieneSnapshot() {
-    const script = `
-$ports = @(8888,18789)
-$listeners = foreach ($port in $ports) {
-    Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | ForEach-Object {
-        $proc = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue
-        [pscustomobject]@{
-            port = $port
-            address = [string]$_.LocalAddress
-            pid = $_.OwningProcess
-            process = if ($proc) { $proc.ProcessName } else { $null }
-            path = if ($proc) { $proc.Path } else { $null }
-            startTime = if ($proc -and $proc.StartTime) { $proc.StartTime.ToString('o') } else { $null }
-        }
-    }
-}
-$nodes = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
-    [pscustomobject]@{
-        pid = $_.ProcessId
-        commandLine = [string]$_.CommandLine
-        executablePath = [string]$_.ExecutablePath
-    }
-}
-[pscustomobject]@{
-    listeners = @($listeners)
-    nodeProcesses = @($nodes)
-} | ConvertTo-Json -Depth 5 -Compress
-`;
-    const out = await powershellJson(script, 8000);
-    const listeners = Array.isArray(out.listeners) ? out.listeners : [];
-    const nodeProcesses = Array.isArray(out.nodeProcesses) ? out.nodeProcesses : [];
-    const dashboardListener = listeners.find(listener => Number(listener.port) === PORT) || null;
-    const gatewayListener = listeners.find(listener => Number(listener.port) === 18789) || null;
-    const currentPid = process.pid;
-    const alerts = [];
-    if (!dashboardListener) {
-        alerts.push(`Dashboard port ${PORT} has no listener.`);
-    } else if (Number(dashboardListener.pid) !== currentPid) {
-        alerts.push(`Dashboard port ${PORT} is owned by PID ${dashboardListener.pid}, not current PID ${currentPid}.`);
-    }
-    if (!gatewayListener) {
-        alerts.push('Gateway port 18789 has no listener.');
-    }
-    if (out.error) alerts.push(`Process query failed: ${out.error}`);
-    const dashboardNodes = nodeProcesses.filter(proc => String(proc.commandLine || '').toLowerCase().includes('dashboard-server.js'));
-    return {
-        ok: alerts.length === 0,
-        state: alerts.length ? 'warn' : 'good',
-        currentPid,
-        nodeProcessCount: nodeProcesses.length,
-        dashboardNodeCount: dashboardNodes.length,
-        listeners,
-        dashboardListener,
-        gatewayListener,
-        alerts
-    };
-}
-
-function credentialCoverageSnapshot(serviceList = visibleServices()) {
-    const items = serviceList
-        .map(svc => {
-            const probe = LIVE_PROBES[svc.name] || {};
-            const authHeader = svc.authHeader || probe.authHeader || '';
-            if (!authHeader) return null;
-            const needsLogin = authHeader === 'Cookie';
-            const configured = needsLogin
-                ? Boolean(storedCredential(svc.name, 'username') && storedCredential(svc.name, 'password'))
-                : Boolean(storedCredential(svc.name, 'key'));
-            return {
-                name: svc.name,
-                type: svc.type,
-                auth: needsLogin ? 'login' : authHeader,
-                configured
-            };
-        })
-        .filter(Boolean)
-        .sort((a, b) => Number(a.configured) - Number(b.configured) || a.name.localeCompare(b.name));
-    const missing = items.filter(item => !item.configured);
-    const configured = items.length - missing.length;
-    const alerts = missing.map(item => `${item.name} credential is not configured.`);
-    return {
-        ok: alerts.length === 0,
-        state: alerts.length ? 'warn' : 'good',
-        total: items.length,
-        configured,
-        missing: missing.length,
-        items,
-        alerts
-    };
-}
-
-function fileSnapshot(label, filePath) {
-    try {
-        if (!fs.existsSync(filePath)) return { label, path: filePath, exists: false };
-        const stat = fs.statSync(filePath);
-        return {
-            label,
-            path: filePath,
-            exists: true,
-            bytes: stat.size,
-            modifiedAt: stat.mtime.toISOString(),
-            ageHours: ageHours(stat.mtime.toISOString())
-        };
-    } catch (err) {
-        return { label, path: filePath, exists: false, error: err.message };
-    }
-}
-
-function configDriftSnapshot() {
-    const watched = [
-        ['Dashboard settings', SETTINGS_PATH],
-        ['Dashboard secrets', SECRETS_PATH],
-        ['Dashboard secret key', SECRET_KEY_PATH],
-        ['Dashboard server', path.join(__dirname, 'dashboard-server.js')],
-        ['Dashboard UI', DASHBOARD_PATH],
-        ['Gateway watchdog', path.join(WORKSPACE_ROOT, 'tools', 'gateway-watchdog.ps1')],
-        ['Dashboard watchdog', path.join(WORKSPACE_ROOT, 'tools', 'dashboard-watchdog.ps1')],
-        ['Operator state', OPERATOR_STATE_PATH],
-        ['Operator events', OPERATOR_EVENTS_PATH]
-    ].map(([label, filePath]) => fileSnapshot(label, filePath));
-    const existing = watched.filter(item => item.exists && Number.isFinite(Number(item.ageHours)));
-    const newest = [...existing].sort((a, b) => Number(a.ageHours) - Number(b.ageHours))[0] || null;
-    const recent = existing.filter(item => Number(item.ageHours) <= 24)
-        .sort((a, b) => Number(a.ageHours) - Number(b.ageHours));
-    const alerts = [];
-    for (const item of watched) {
-        if (!item.exists && ['Dashboard settings', 'Dashboard server', 'Dashboard UI'].includes(item.label)) {
-            alerts.push(`${item.label} is missing.`);
-        }
-        if (item.error) alerts.push(`${item.label} check failed: ${item.error}`);
-    }
-    return {
-        ok: alerts.length === 0,
-        state: alerts.length ? 'warn' : 'good',
-        newest,
-        recent: recent.slice(0, 6),
-        watched,
-        alerts
-    };
-}
-
-function taskByName(tasks, name) {
-    return (tasks || []).find(task => task.name === name) || {};
-}
-
-function buildOperatorChecks(ports, tasks) {
-    const gatewayPort = (ports || []).find(p => p.name === 'Gateway') || {};
-    const dashboardPort = (ports || []).find(p => p.name === 'Dashboard') || {};
-    const gateway = taskByName(tasks, 'Gateway');
-    const gatewayWatchdog = taskByName(tasks, 'Gateway Watchdog');
-    const dashboardWatchdog = taskByName(tasks, 'Dashboard Watchdog');
-    const taskOk = task => task && task.state !== 'Missing' && !task.error && ![undefined, null].includes(task.lastTaskResult) && [0, 267009].includes(Number(task.lastTaskResult));
-    const nextRunOk = task => task && task.nextRunTime;
-    const hiddenOk = task => task && task.hidden === true;
-    return [
-        {
-            label: 'Gateway reachable',
-            state: gatewayPort.status === 'online' ? 'good' : 'bad',
-            detail: gatewayPort.status === 'online' ? `${Math.round(gatewayPort.responseTime || 0)}ms response` : 'Gateway port is not answering.'
-        },
-        {
-            label: 'Dashboard reachable',
-            state: dashboardPort.status === 'online' ? 'good' : 'bad',
-            detail: dashboardPort.status === 'online' ? `${Math.round(dashboardPort.responseTime || 0)}ms response` : 'Dashboard port is not answering.'
-        },
-        {
-            label: 'Gateway restart policy',
-            state: Number(gateway.restartCount || 0) >= 1 && gateway.startWhenAvailable ? 'good' : 'warn',
-            detail: Number(gateway.restartCount || 0) >= 1 ? `${gateway.restartCount} restart attempts, start-when-available ${gateway.startWhenAvailable ? 'on' : 'off'}` : 'Gateway task will not self-restart.'
-        },
-        {
-            label: 'Gateway watchdog',
-            state: taskOk(gatewayWatchdog) && hiddenOk(gatewayWatchdog) && nextRunOk(gatewayWatchdog) ? 'good' : 'warn',
-            detail: gatewayWatchdog.state === 'Missing' ? 'Scheduled task is missing.' : `last ${gatewayWatchdog.lastTaskResult ?? '-'}, next ${gatewayWatchdog.nextRunTime || '-'}, ${gatewayWatchdog.hidden ? 'hidden' : 'visible'}`
-        },
-        {
-            label: 'Dashboard watchdog',
-            state: taskOk(dashboardWatchdog) && hiddenOk(dashboardWatchdog) && nextRunOk(dashboardWatchdog) ? 'good' : 'warn',
-            detail: dashboardWatchdog.state === 'Missing' ? 'Scheduled task is missing.' : `last ${dashboardWatchdog.lastTaskResult ?? '-'}, next ${dashboardWatchdog.nextRunTime || '-'}, ${dashboardWatchdog.hidden ? 'hidden' : 'visible'}`
-        }
-    ];
-}
-
-function operatorBriefingSnapshot(checks) {
-    const items = Array.isArray(checks) ? checks : [];
-    const bad = items.filter(check => check.state === 'bad');
-    const warn = items.filter(check => check.state === 'warn');
-    const good = items.filter(check => check.state === 'good');
-    const primary = bad[0] || warn[0] || null;
-    let headline = 'All watched systems are calm.';
-    let nextAction = 'No action needed right now.';
-    if (primary) {
-        headline = primary.state === 'bad'
-            ? `${primary.label} needs attention.`
-            : `${primary.label} should be reviewed.`;
-        nextAction = primary.detail || 'Open the related card below for details.';
-    }
-    return {
-        state: bad.length ? 'bad' : (warn.length ? 'warn' : 'good'),
-        headline,
-        nextAction,
-        good: good.length,
-        warn: warn.length,
-        bad: bad.length,
-        total: items.length
-    };
-}
-
-async function servicePulseSnapshot(serviceList = visibleServices()) {
-    const results = await Promise.all(
-        serviceList.map(async (svc) => {
-            const status = await checkPort(svc.host, svc.port, 2500);
-            return { name: svc.name, type: svc.type, host: svc.host, port: svc.port, ...status };
-        })
-    );
-    const online = results.filter(svc => svc.status === 'online');
-    const offline = results.filter(svc => svc.status === 'offline');
-    const slowest = online
-        .filter(svc => Number.isFinite(Number(svc.responseTime)))
-        .sort((a, b) => Number(b.responseTime) - Number(a.responseTime))[0] || null;
-    return {
-        total: results.length,
-        online: online.length,
-        offline: offline.length,
-        offlineServices: offline.map(svc => ({
-            name: svc.name,
-            type: svc.type,
-            host: svc.host,
-            port: svc.port
-        })),
-        slowest: slowest ? {
-            name: slowest.name,
-            responseTime: slowest.responseTime
-        } : null,
-        services: results.map(svc => ({
-            name: svc.name,
-            status: svc.status,
-            responseTime: svc.responseTime
-        }))
-    };
-}
-
-function serviceTriageSnapshot(servicePulse, telemetry, serviceList = visibleServices()) {
-    const serviceResults = Array.isArray(servicePulse?.services) ? servicePulse.services : [];
-    const byName = new Map(serviceResults.map(svc => [svc.name, svc]));
-    const byHost = new Map();
-    for (const svc of serviceList) {
-        if (!svc.host) continue;
-        const status = byName.get(svc.name)?.status || 'unknown';
-        const bucket = byHost.get(svc.host) || { total: 0, online: 0, offline: 0 };
-        bucket.total += 1;
-        if (status === 'online') bucket.online += 1;
-        if (status === 'offline') bucket.offline += 1;
-        byHost.set(svc.host, bucket);
-    }
-
-    const items = [];
-    const offline = Array.isArray(servicePulse?.offlineServices) ? servicePulse.offlineServices : [];
-    for (const svc of offline.slice(0, 5)) {
-        const descriptor = serviceList.find(item => item.name === svc.name) || svc;
-        const hostPeer = byHost.get(descriptor.host || svc.host) || {};
-        const sameHostHasOnline = Number(hostPeer.online || 0) > 0;
-        let likely = sameHostHasOnline
-            ? 'Host is reachable; the app/container or port binding is the likely fault.'
-            : 'No healthy peers on this host; check host power, network, and TrueNAS first.';
-        const steps = sameHostHasOnline
-            ? ['Open Dockge or TrueNAS apps for the service.', `Confirm ${descriptor.name} is running and listening on port ${descriptor.port || svc.port}.`, 'Check recent app logs before restarting.']
-            : ['Ping or open the host management page.', 'Check TrueNAS and switch connectivity.', 'Re-run the dashboard scan after the host responds.'];
-
-        if (descriptor.type === '*Arr') {
-            likely = `${descriptor.name} is part of the *Arr stack; this usually means the app container is stopped, unhealthy, or mapped to a different port.`;
-            steps[0] = 'Open Dockge or TrueNAS Apps and check the *Arr stack.';
-        }
-
-        items.push({
-            name: descriptor.name || svc.name,
-            tone: 'bad',
-            category: descriptor.type || svc.type || 'Service',
-            target: `${descriptor.host || svc.host}:${descriptor.port || svc.port}`,
-            likely,
-            steps
-        });
-    }
-
-    const downTargets = Array.isArray(telemetry?.targets)
-        ? telemetry.targets.filter(t => t.health && t.health !== 'up')
-        : [];
-    for (const target of downTargets.slice(0, 3)) {
-        const related = serviceList.find(svc => {
-            const scrape = String(target.scrapeUrl || '');
-            return scrape.includes(`:${svc.port}`) || scrape.includes(svc.name.toLowerCase().replace(/\s+/g, '-'));
-        });
-        const serviceStatus = related ? byName.get(related.name)?.status : null;
-        items.push({
-            name: target.job || related?.name || 'Prometheus target',
-            tone: serviceStatus?.status === 'online' ? 'warn' : 'bad',
-            category: 'Telemetry',
-            target: target.scrapeUrl || related?.url || '',
-            likely: serviceStatus?.status === 'online'
-                ? 'The service port is open, but Prometheus scraping is failing.'
-                : 'Prometheus cannot scrape this target.',
-            steps: [
-                target.lastError || 'Review the Prometheus target error.',
-                related ? `Open ${related.name} and confirm its metrics endpoint.` : 'Open Prometheus Targets for the full scrape error.',
-                'Restart the exporter only after confirming the endpoint is still wrong.'
-            ]
-        });
-    }
-
-    return {
-        total: items.length,
-        items: items.slice(0, 6)
-    };
-}
-
-function lanWatchSnapshot(servicePulse, serviceList = visibleServices()) {
-    const serviceResults = Array.isArray(servicePulse?.services) ? servicePulse.services : [];
-    const serviceByName = new Map(serviceResults.map(svc => [svc.name, svc]));
-    const byHost = new Map();
-    for (const svc of serviceList) {
-        if (!svc.host) continue;
-        const key = String(svc.host).trim();
-        if (!key) continue;
-        const current = byHost.get(key) || {
-            host: key,
-            services: [],
-            online: 0,
-            offline: 0,
-            total: 0,
-            responseTimes: []
-        };
-        const result = serviceByName.get(svc.name) || {};
-        const status = result.status || 'unknown';
-        current.total += 1;
-        if (status === 'online') current.online += 1;
-        if (status === 'offline') current.offline += 1;
-        if (Number.isFinite(Number(result.responseTime))) current.responseTimes.push(Number(result.responseTime));
-        current.services.push({
-            name: svc.name,
-            type: svc.type,
-            port: svc.port,
-            status,
-            responseTime: result.responseTime
-        });
-        byHost.set(key, current);
-    }
-
-    const hosts = [...byHost.values()].map(host => {
-        const state = host.offline === 0
-            ? 'good'
-            : (host.online > 0 ? 'warn' : 'bad');
-        const avgResponseMs = host.responseTimes.length
-            ? Math.round(host.responseTimes.reduce((sum, value) => sum + value, 0) / host.responseTimes.length)
-            : null;
-        const slowest = host.services
-            .filter(svc => Number.isFinite(Number(svc.responseTime)))
-            .sort((a, b) => Number(b.responseTime) - Number(a.responseTime))[0] || null;
-        return {
-            ...host,
-            state,
-            avgResponseMs,
-            slowest: slowest ? { name: slowest.name, responseTime: slowest.responseTime } : null,
-            offlineServices: host.services.filter(svc => svc.status === 'offline').map(svc => svc.name)
-        };
-    }).sort((a, b) => {
-        const rank = { bad: 0, warn: 1, good: 2 };
-        return (rank[a.state] ?? 3) - (rank[b.state] ?? 3) || b.total - a.total || a.host.localeCompare(b.host);
-    });
-
-    const down = hosts.filter(host => host.state === 'bad');
-    const partial = hosts.filter(host => host.state === 'warn');
-    const alerts = [
-        ...down.map(host => `${host.host} has no responding dashboard services.`),
-        ...partial.map(host => `${host.host} has ${host.offline}/${host.total} service checks offline.`)
-    ];
-
-    return {
-        ok: alerts.length === 0,
-        state: down.length ? 'bad' : (partial.length ? 'warn' : 'good'),
-        total: hosts.length,
-        healthy: hosts.filter(host => host.state === 'good').length,
-        partial: partial.length,
-        down: down.length,
-        hosts,
-        alerts
-    };
-}
-
-function publicHttpsServices(serviceList = visibleServices()) {
-    return serviceList.filter(svc => {
-        if (!svc.url || !String(svc.url).startsWith('https://')) return false;
-        if (!svc.host || net.isIP(svc.host)) return false;
-        if (/^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(String(svc.host))) return false;
-        return true;
-    });
-}
-
-function tlsCertificateSnapshot(host, port = 443, timeout = 5000) {
-    return new Promise((resolve) => {
-        const socket = tls.connect({ host, port, servername: host, timeout, rejectUnauthorized: false }, () => {
-            const cert = socket.getPeerCertificate();
-            socket.end();
-            const validTo = cert?.valid_to ? new Date(cert.valid_to) : null;
-            const daysRemaining = validTo && Number.isFinite(validTo.getTime())
-                ? Math.ceil((validTo.getTime() - Date.now()) / 86400000)
-                : null;
-            resolve({
-                ok: Boolean(cert && cert.valid_to),
-                subject: cert?.subject?.CN || '',
-                issuer: cert?.issuer?.O || cert?.issuer?.CN || '',
-                validTo: validTo ? validTo.toISOString() : null,
-                daysRemaining
-            });
-        });
-        socket.on('timeout', () => {
-            socket.destroy();
-            resolve({ ok: false, error: 'TLS timeout' });
-        });
-        socket.on('error', err => resolve({ ok: false, error: err.message }));
-    });
-}
-
-function httpsStatusSnapshot(url, timeout = 6000) {
-    return new Promise((resolve) => {
-        const req = https.request(url, { method: 'GET', timeout, headers: { 'User-Agent': 'dashboard-server/1.0' } }, res => {
-            res.resume();
-            res.on('end', () => resolve({
-                ok: res.statusCode >= 200 && res.statusCode < 400,
-                status: res.statusCode
-            }));
-        });
-        req.on('timeout', () => {
-            req.destroy();
-            resolve({ ok: false, error: 'HTTPS timeout' });
-        });
-        req.on('error', err => resolve({ ok: false, error: err.message }));
-        req.end();
-    });
-}
-
-async function publicEndpointSnapshot(serviceList = visibleServices()) {
-    const targets = publicHttpsServices(serviceList);
-    const endpoints = await Promise.all(targets.map(async svc => {
-        const [addresses, cert, httpStatus] = await Promise.all([
-            dns.lookup(svc.host, { all: true }).catch(err => ({ error: err.message })),
-            tlsCertificateSnapshot(svc.host, svc.port || 443),
-            httpsStatusSnapshot(svc.url)
-        ]);
-        const addressList = Array.isArray(addresses) ? addresses.map(a => a.address) : [];
-        const alerts = [];
-        if (!addressList.length) alerts.push(`DNS failed: ${addresses.error || 'no addresses'}`);
-        if (!cert.ok) alerts.push(`TLS failed: ${cert.error || 'no certificate'}`);
-        if (Number.isFinite(Number(cert.daysRemaining)) && Number(cert.daysRemaining) <= 21) alerts.push(`Certificate expires in ${cert.daysRemaining} days`);
-        if (!httpStatus.ok) alerts.push(`HTTPS ${httpStatus.status || httpStatus.error || 'failed'}`);
-        return {
-            name: svc.name,
-            host: svc.host,
-            url: svc.url,
-            addresses: addressList,
-            cert,
-            httpStatus,
-            status: alerts.length ? 'warn' : 'good',
-            alerts
-        };
-    }));
-    return {
-        total: endpoints.length,
-        healthy: endpoints.filter(e => e.status === 'good').length,
-        alerts: endpoints.flatMap(e => e.alerts.map(alert => `${e.name}: ${alert}`)),
-        endpoints
-    };
-}
-
-async function telemetryFreshnessSnapshot() {
-    const endpoint = (storedEndpoint('Prometheus') || LIVE_PROBES.Prometheus.defaultUrl).replace(/\/+$/, '');
-    try {
-        const resp = await liveFetch({
-            baseUrl: endpoint,
-            path: '/api/v1/targets',
-            key: '',
-            probe: LIVE_PROBES.Prometheus
-        });
-        if (!resp.ok) {
-            return { configured: true, endpoint, ok: false, alerts: [`Prometheus targets HTTP ${resp.status}`], targets: [] };
-        }
-        const targets = asArray(resp.body?.data?.activeTargets).map(target => {
-            const lastScrape = isoOrNull(target.lastScrape);
-            const ageSeconds = lastScrape ? Math.round((Date.now() - Date.parse(lastScrape)) / 1000) : null;
-            const labels = target.labels || {};
-            const job = String(labels.job || target.scrapePool || target.scrapeUrl || 'target');
-            const health = String(target.health || '').toLowerCase();
-            return {
-                job,
-                scrapeUrl: String(target.scrapeUrl || ''),
-                health: health || 'unknown',
-                lastScrape,
-                ageSeconds,
-                lastError: String(target.lastError || '')
-            };
-        });
-        const down = targets.filter(t => t.health && t.health !== 'up');
-        const stale = targets.filter(t => Number.isFinite(Number(t.ageSeconds)) && Number(t.ageSeconds) > 600);
-        const alerts = [
-            ...down.slice(0, 4).map(t => `${t.job} target is ${t.health}${t.lastError ? `: ${t.lastError}` : ''}`),
-            ...stale.slice(0, 4).map(t => `${t.job} target last scraped ${Math.round(t.ageSeconds / 60)}m ago`)
-        ];
-        return {
-            configured: true,
-            endpoint,
-            ok: alerts.length === 0,
-            total: targets.length,
-            up: targets.filter(t => t.health === 'up').length,
-            down: down.length,
-            stale: stale.length,
-            targets,
-            alerts
-        };
-    } catch (err) {
-        return {
-            configured: true,
-            endpoint,
-            ok: false,
-            alerts: [`Prometheus targets unavailable: ${err.message}`],
-            targets: []
-        };
-    }
-}
-
-function runScheduledTask(taskName) {
-    return new Promise((resolve) => {
-        execFile(
-            'schtasks.exe',
-            ['/Run', '/TN', taskName],
-            { timeout: 8000, windowsHide: true, maxBuffer: 256 * 1024 },
-            (err, stdout, stderr) => {
-                if (err) {
-                    resolve({ ok: false, error: err.message, stderr: String(stderr || '').trim() });
-                    return;
-                }
-                resolve({ ok: true, message: String(stdout || '').trim() || `${taskName} started.` });
-            }
-        );
-    });
-}
-
-async function operatorAction(action) {
-    const actions = {
-        runGatewayWatchdog: 'Gateway Watchdog',
-        runDashboardWatchdog: 'Dashboard Watchdog'
-    };
-    const taskName = actions[action];
-    if (!taskName) return { ok: false, error: 'Unknown operator action' };
-    const result = await runScheduledTask(taskName);
-    appendOperatorEvent({
-        source: 'Operator action',
-        tone: result.ok ? 'good' : 'bad',
-        message: result.ok ? `${taskName} was started manually.` : `${taskName} failed to start: ${result.error || result.stderr || 'unknown error'}`
-    });
-    return { action, taskName, ...result };
-}
-
-function recordOperatorTransitions(ports, tasks, checks, servicePulse, trueNas, publicEndpoints, telemetry) {
-    const previous = readOperatorState();
-    const current = {
-        ports: Object.fromEntries((ports || []).map(p => [p.name, p.status])),
-        services: Object.fromEntries(((servicePulse || {}).services || []).map(s => [s.name, s.status])),
-        telemetry: {
-            alerts: Array.isArray(telemetry?.alerts) ? telemetry.alerts.length : 0,
-            down: Number(telemetry?.down || 0),
-            stale: Number(telemetry?.stale || 0),
-            targets: Object.fromEntries(((telemetry || {}).targets || []).map(t => [t.job, t.health]))
-        },
-        publicEndpoints: Object.fromEntries(((publicEndpoints || {}).endpoints || []).map(e => [e.name, {
-            status: e.status,
-            daysRemaining: e.cert?.daysRemaining ?? null,
-            httpStatus: e.httpStatus?.status ?? null
-        }])),
-        trueNas: {
-            configured: Boolean(trueNas?.configured),
-            alerts: Array.isArray(trueNas?.alerts) ? trueNas.alerts.length : 0,
-            pools: Object.fromEntries(((trueNas || {}).pools || []).map(p => [p.name, p.status || (p.healthy ? 'ONLINE' : 'UNKNOWN')])),
-            probes: trueNas?.probes || {}
-        },
-        tasks: Object.fromEntries((tasks || []).map(t => [t.name, {
-            state: t.state,
-            hidden: t.hidden,
-            lastTaskResult: t.lastTaskResult,
-            restartCount: t.restartCount,
-            startWhenAvailable: t.startWhenAvailable
-        }])),
-        checks: Object.fromEntries((checks || []).map(c => [c.label, c.state]))
-    };
-
-    if (previous.ports) {
-        for (const [name, status] of Object.entries(current.ports)) {
-            if (previous.ports[name] && previous.ports[name] !== status) {
-                appendOperatorEvent({
-                    tone: status === 'online' ? 'good' : 'bad',
-                    message: `${name} changed from ${previous.ports[name]} to ${status}.`
-                });
-            }
-        }
-    }
-    if (previous.services) {
-        for (const [name, status] of Object.entries(current.services)) {
-            if (previous.services[name] && previous.services[name] !== status) {
-                appendOperatorEvent({
-                    tone: status === 'online' ? 'good' : 'bad',
-                    message: `${name} service changed from ${previous.services[name]} to ${status}.`
-                });
-            }
-        }
-    }
-    if (previous.checks) {
-        for (const check of checks || []) {
-            const oldState = previous.checks[check.label];
-            if (oldState && oldState !== check.state) {
-                appendOperatorEvent({
-                    tone: check.state,
-                    message: `${check.label} changed from ${oldState} to ${check.state}: ${check.detail}`
-                });
-            }
-        }
-    }
-    if (previous.trueNas) {
-        const oldAlerts = Number(previous.trueNas.alerts || 0);
-        const newAlerts = Number(current.trueNas.alerts || 0);
-        if (oldAlerts !== newAlerts) {
-            appendOperatorEvent({
-                tone: newAlerts ? 'warn' : 'good',
-                source: 'TrueNAS',
-                message: `TrueNAS maintenance alerts changed from ${oldAlerts} to ${newAlerts}.`
-            });
-        }
-        for (const [name, status] of Object.entries(current.trueNas.pools || {})) {
-            const oldStatus = previous.trueNas.pools?.[name];
-            if (oldStatus && oldStatus !== status) {
-                appendOperatorEvent({
-                    tone: /ONLINE|HEALTHY|AVAILABLE/i.test(status) ? 'good' : 'bad',
-                    source: 'TrueNAS',
-                    message: `${name} pool changed from ${oldStatus} to ${status}.`
-                });
-            }
-        }
-    }
-    if (previous.publicEndpoints) {
-        for (const [name, currentEndpoint] of Object.entries(current.publicEndpoints || {})) {
-            const oldEndpoint = previous.publicEndpoints[name];
-            if (!oldEndpoint) continue;
-            if (oldEndpoint.status !== currentEndpoint.status) {
-                appendOperatorEvent({
-                    tone: currentEndpoint.status === 'good' ? 'good' : 'warn',
-                    source: 'Public endpoint',
-                    message: `${name} changed from ${oldEndpoint.status} to ${currentEndpoint.status}.`
-                });
-            }
-            if (Number.isFinite(Number(oldEndpoint.daysRemaining)) && Number.isFinite(Number(currentEndpoint.daysRemaining))) {
-                if (Number(oldEndpoint.daysRemaining) > 21 && Number(currentEndpoint.daysRemaining) <= 21) {
-                    appendOperatorEvent({
-                        tone: 'warn',
-                        source: 'Certificate monitor',
-                        message: `${name} certificate is within 21 days of expiry.`
-                    });
-                }
-            }
-        }
-    }
-    if (previous.telemetry) {
-        const oldAlerts = Number(previous.telemetry.alerts || 0);
-        const newAlerts = Number(current.telemetry.alerts || 0);
-        if (oldAlerts !== newAlerts) {
-            appendOperatorEvent({
-                tone: newAlerts ? 'warn' : 'good',
-                source: 'Telemetry',
-                message: `Telemetry alerts changed from ${oldAlerts} to ${newAlerts}.`
-            });
-        }
-        for (const [job, health] of Object.entries(current.telemetry.targets || {})) {
-            const oldHealth = previous.telemetry.targets?.[job];
-            if (oldHealth && oldHealth !== health) {
-                appendOperatorEvent({
-                    tone: health === 'up' ? 'good' : 'warn',
-                    source: 'Telemetry',
-                    message: `${job} target changed from ${oldHealth} to ${health}.`
-                });
-            }
-        }
-    }
-    writeOperatorState({ ...current, updatedAt: new Date().toISOString() });
-}
-
-function operatorRuntimeSnapshot() {
-    const mem = process.memoryUsage();
-    return {
-        pid: process.pid,
-        uptimeSeconds: Math.round(process.uptime()),
-        startedAt: new Date(Date.now() - (process.uptime() * 1000)).toISOString(),
-        node: process.version,
-        host: os.hostname(),
-        memory: {
-            rss: mem.rss,
-            heapUsed: mem.heapUsed,
-            heapTotal: mem.heapTotal,
-            systemFree: os.freemem(),
-            systemTotal: os.totalmem()
-        }
-    };
-}
-
-async function operatorStatus() {
-    const trueNasKey = storedCredential('TrueNAS Web UI', 'key');
-    const trueNasEndpoint = storedEndpoint('TrueNAS Web UI') || LIVE_PROBES['TrueNAS Web UI'].defaultUrl;
-    const serviceList = visibleServices();
-    const [gatewayPort, dashboardPort, tasks, servicePulse, trueNas, publicEndpoints, telemetry, housekeeping, processHygiene, credentialCoverage, changeWatch] = await Promise.all([
-        checkPort('127.0.0.1', 18789, 2500),
-        checkPort('127.0.0.1', 8888, 2500),
-        scheduledTaskSnapshot(),
-        servicePulseSnapshot(serviceList),
-        queryTrueNasMaintenance(trueNasKey, trueNasEndpoint),
-        publicEndpointSnapshot(serviceList),
-        telemetryFreshnessSnapshot(),
-        housekeepingSnapshot(),
-        processHygieneSnapshot(),
-        Promise.resolve(credentialCoverageSnapshot(serviceList)),
-        Promise.resolve(configDriftSnapshot())
-    ]);
-    const triage = serviceTriageSnapshot(servicePulse, telemetry, serviceList);
-    const lanWatch = lanWatchSnapshot(servicePulse, serviceList);
-    const ports = [
-        { name: 'Gateway', host: '127.0.0.1', port: 18789, ...gatewayPort },
-        { name: 'Dashboard', host: '127.0.0.1', port: 8888, ...dashboardPort }
-    ];
-    const checks = buildOperatorChecks(ports, tasks);
-    if (servicePulse.offline > 0) {
-        checks.push({
-            label: 'Service pulse',
-            state: 'warn',
-            detail: `${servicePulse.offline}/${servicePulse.total} services offline: ${servicePulse.offlineServices.slice(0, 3).map(s => s.name).join(', ')}${servicePulse.offlineServices.length > 3 ? '...' : ''}`
-        });
-    } else {
-        checks.push({
-            label: 'Service pulse',
-            state: 'good',
-            detail: `${servicePulse.online}/${servicePulse.total} configured services online.`
-        });
-    }
-    checks.push({
-        label: 'LAN watch',
-        state: lanWatch.state || 'warn',
-        detail: lanWatch.alerts?.length
-            ? lanWatch.alerts.slice(0, 2).join(' ')
-            : `${lanWatch.healthy}/${lanWatch.total} local hosts healthy.`
-    });
-    if (!trueNas.configured) {
-        checks.push({
-            label: 'TrueNAS maintenance',
-            state: 'warn',
-            detail: trueNas.notice || 'TrueNAS API key is not configured.'
-        });
-    } else if ((trueNas.alerts || []).length) {
-        checks.push({
-            label: 'TrueNAS maintenance',
-            state: (trueNas.pools || []).some(pool => !pool.healthy) ? 'bad' : 'warn',
-            detail: trueNas.alerts.slice(0, 2).join(' ')
-        });
-    } else {
-        checks.push({
-            label: 'TrueNAS maintenance',
-            state: 'good',
-            detail: `${(trueNas.pools || []).length} pool${(trueNas.pools || []).length === 1 ? '' : 's'} healthy, scrub/SMART/snapshot probes clear.`
-        });
-    }
-    const backupAssurance = trueNas.backupAssurance || {};
-    checks.push({
-        label: 'Backup assurance',
-        state: backupAssurance.state || 'warn',
-        detail: backupAssurance.alerts?.length
-            ? backupAssurance.alerts.slice(0, 2).join(' ')
-            : (backupAssurance.newestSnapshot
-                ? `Newest snapshot ${Math.round(Number(backupAssurance.newestSnapshotAgeHours || 0))}h ago.`
-                : 'Snapshot age not verified yet.')
-    });
-    if (publicEndpoints.total > 0) {
-        checks.push({
-            label: 'Public endpoints',
-            state: publicEndpoints.alerts.length ? 'warn' : 'good',
-            detail: publicEndpoints.alerts.length
-                ? publicEndpoints.alerts.slice(0, 2).join(' ')
-                : `${publicEndpoints.healthy}/${publicEndpoints.total} public HTTPS endpoint${publicEndpoints.total === 1 ? '' : 's'} healthy.`
-        });
-    }
-    checks.push({
-        label: 'Telemetry freshness',
-        state: telemetry.alerts?.length ? 'warn' : 'good',
-        detail: telemetry.alerts?.length
-            ? telemetry.alerts.slice(0, 2).join(' ')
-            : `${telemetry.up || 0}/${telemetry.total || 0} Prometheus targets fresh.`
-    });
-    checks.push({
-        label: 'Housekeeping',
-        state: housekeeping.state || 'warn',
-        detail: housekeeping.alerts?.length
-            ? housekeeping.alerts.slice(0, 2).join(' ')
-            : `C: drive ${housekeeping.drive?.freePct ?? '-'}% free; temp/log checks clear.`
-    });
-    checks.push({
-        label: 'Process hygiene',
-        state: processHygiene.state || 'warn',
-        detail: processHygiene.alerts?.length
-            ? processHygiene.alerts.slice(0, 2).join(' ')
-            : `Dashboard PID ${processHygiene.currentPid} owns port ${PORT}; ${processHygiene.nodeProcessCount || 0} node processes visible.`
-    });
-    checks.push({
-        label: 'Credential coverage',
-        state: credentialCoverage.state || 'warn',
-        detail: credentialCoverage.alerts?.length
-            ? credentialCoverage.alerts.slice(0, 2).join(' ')
-            : `${credentialCoverage.configured}/${credentialCoverage.total} credentialed probes configured.`
-    });
-    checks.push({
-        label: 'Change watch',
-        state: changeWatch.state || 'warn',
-        detail: changeWatch.alerts?.length
-            ? changeWatch.alerts.slice(0, 2).join(' ')
-            : (changeWatch.newest
-                ? `${changeWatch.newest.label} changed ${Math.round(Number(changeWatch.newest.ageHours || 0))}h ago.`
-                : 'No watched file changes found.')
-    });
-    const briefing = operatorBriefingSnapshot(checks);
-    recordOperatorTransitions(ports, tasks, checks, servicePulse, trueNas, publicEndpoints, telemetry);
-    const incidents = [...readWatchdogEvents(), ...readOperatorEvents()]
-        .sort((a, b) => (Date.parse(b.timestamp || 0) || 0) - (Date.parse(a.timestamp || 0) || 0))
-        .slice(0, 12);
-    return {
-        generatedAt: Date.now(),
-        ports,
-        briefing,
-        tasks,
-        checks,
-        servicePulse,
-        lanWatch,
-        triage,
-        trueNas,
-        publicEndpoints,
-        telemetry,
-        housekeeping,
-        processHygiene,
-        credentialCoverage,
-        changeWatch,
-        runtime: operatorRuntimeSnapshot(),
-        incidents
-    };
-}
-
 migrateSettingsSecretsToVault();
 
 // ===================================================================
@@ -2368,7 +1297,7 @@ function dockerRequest(method, p, host) {
         let target;
         try { target = new URL(p, host); } catch (e) { reject(e); return; }
         const lib = target.protocol === 'https:' ? require('https') : require('http');
-        const opts = { method, timeout: 9000, ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: false }) } : {}) };
+        const opts = { method, timeout: 9000, ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: !ALLOW_INSECURE_TLS }) } : {}) };
         const rq = lib.request(target, opts, r => {
             let data = '';
             r.on('data', c => data += c);
@@ -2803,13 +1732,41 @@ function rateLimited(ip) {
 const _sessions = new Map();   // token -> expiry ms
 const SESSION_TTL_MS = 12 * 3600 * 1000;
 function sha256hex(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
-function storedAuthHash() { try { return (readSecretVault().auth || {}).passwordHash || ''; } catch (e) { return ''; } }
-function authPasswordHash() { return process.env.DASHBOARD_PASSWORD ? sha256hex(process.env.DASHBOARD_PASSWORD) : storedAuthHash(); }
-function authEnabled() { return !!authPasswordHash(); }
+// Password hashing uses Node's built-in scrypt — a slow, memory-hard, salted KDF
+// (no invented crypto, no dependency). Stored as a self-describing string
+// `scrypt$N$saltB64$hashB64`. A legacy 64-hex sha256 digest is still verifiable and
+// is transparently re-hashed to scrypt on the next successful login.
+const SCRYPT_N = 1 << 15, SCRYPT_R = 8, SCRYPT_P = 1, SCRYPT_KEYLEN = 32;
+function hashPassword(pw) {
+    const salt = crypto.randomBytes(16);
+    const dk = crypto.scryptSync(String(pw), salt, SCRYPT_KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: 128 * 1024 * 1024 });
+    return `scrypt$${SCRYPT_N}$${salt.toString('base64')}$${dk.toString('base64')}`;
+}
+function verifyPassword(pw, stored) {
+    try {
+        stored = String(stored || '');
+        if (/^[0-9a-f]{64}$/i.test(stored)) {   // legacy sha256 digest
+            const a = Buffer.from(sha256hex(pw), 'hex'), b = Buffer.from(stored, 'hex');
+            return a.length === b.length && crypto.timingSafeEqual(a, b);
+        }
+        const [scheme, nStr, saltB64, hashB64] = stored.split('$');
+        if (scheme !== 'scrypt' || !saltB64 || !hashB64) return false;
+        const N = Number(nStr) || SCRYPT_N;
+        const salt = Buffer.from(saltB64, 'base64'), target = Buffer.from(hashB64, 'base64');
+        const dk = crypto.scryptSync(String(pw), salt, target.length, { N, r: SCRYPT_R, p: SCRYPT_P, maxmem: 256 * 1024 * 1024 });
+        return dk.length === target.length && crypto.timingSafeEqual(dk, target);
+    } catch (e) { return false; }
+}
+function storedAuthTarget() { try { return (readSecretVault().auth || {}).passwordHash || ''; } catch (e) { return ''; } }
+// Hash the env password once at boot with a per-process salt so login is slow +
+// constant-time without persisting a salt for a value that lives in the environment.
+const _envAuthTarget = process.env.DASHBOARD_PASSWORD ? hashPassword(process.env.DASHBOARD_PASSWORD) : '';
+function authTarget() { return _envAuthTarget || storedAuthTarget(); }
+function authEnabled() { return !!authTarget(); }
 function authPasswordFromEnv() { return !!process.env.DASHBOARD_PASSWORD; }
 function setVaultAuthPassword(pw) {
     const v = readSecretVault(); v.auth = v.auth || {};
-    if (pw) v.auth.passwordHash = sha256hex(pw); else delete v.auth.passwordHash;
+    if (pw) v.auth.passwordHash = hashPassword(pw); else delete v.auth.passwordHash;
     writeSecretVault(v);
 }
 function issueSession(req, res, extra) {
@@ -2843,6 +1800,10 @@ function timingSafeMatch(a, b) {
    direct LAN bind). PUBLIC_URL pins the canonical external origin when known. */
 const TRUST_PROXY = process.env.TRUST_PROXY !== '0';
 const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+// Outbound TLS verification is ON by default. Many homelab services (UniFi,
+// TrueNAS, Proxmox) use self-signed certs; set ALLOW_INSECURE_TLS=1 to skip
+// verification for those upstreams, or supply a CA bundle via NODE_EXTRA_CA_CERTS.
+const ALLOW_INSECURE_TLS = process.env.ALLOW_INSECURE_TLS === '1';
 function reqScheme(req) {
     if (PUBLIC_URL) { try { return new URL(PUBLIC_URL).protocol.replace(':', ''); } catch (e) {} }
     if (TRUST_PROXY) {
@@ -2861,9 +1822,24 @@ function reqHost(req) {
 function isSecureRequest(req) { return reqScheme(req) === 'https'; }
 function publicOrigin(req) { return PUBLIC_URL || `${reqScheme(req)}://${reqHost(req)}`; }
 // Build a Set-Cookie that upgrades to Secure automatically behind TLS.
+// SameSite=Strict: the dashboard has no cross-site entry flow, so the cookie is
+// never sent on a cross-origin request — closing the residual CSRF surface.
 function sessionCookie(req, name, value, maxAgeSec) {
     const secure = isSecureRequest(req) ? '; Secure' : '';
-    return `${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}${secure}`;
+    return `${name}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSec}${secure}`;
+}
+// Security/hardening headers for the HTML document + static responses. CSP allows
+// 'unsafe-inline' for now (app.html inlines its scripts/handlers); everything else
+// is same-origin. Images allow data: (inline SVG fallbacks) and https: (proxied).
+function securityHeaders(req) {
+    const h = {
+        'Content-Security-Policy': "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'same-origin',
+    };
+    if (isSecureRequest(req)) h['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains';
+    return h;
 }
 
 /* ═══════════════════════════ DEMO MODE ═══════════════════════════
@@ -3022,23 +1998,44 @@ const server = http.createServer(async (req, res) => {
     // ── gate 2: cross-origin state-changing requests are rejected (CSRF defense) ──
     const origin = req.headers.origin || '';
     const host = req.headers.host || '';
-    const sameOrigin = !origin || origin === `http://${host}` || origin === `https://${host}` || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin);
-    if (req.method === 'POST' && !sameOrigin) {
-        auditLog(req, 'csrf.reject', req.url, 'blocked');
-        res.writeHead(403, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'cross-origin request rejected' }));
-        return;
+    const clientIsLoopback = /^(::1$|127\.|::ffff:127\.)/.test(clientIp);
+    const originOk = o => o === `http://${host}` || o === `https://${host}` || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(o);
+    const sameOrigin = origin ? originOk(origin) : true;
+    // CSRF: reject cross-origin POSTs. A POST with NEITHER Origin NOR a same-origin
+    // Referer is only trusted from loopback (local tooling) — a browser always sends
+    // at least one, so this closes the missing-Origin bypass. The session cookie is
+    // also SameSite=Strict, so a cross-site request can't carry a session regardless.
+    if (req.method === 'POST') {
+        const referer = req.headers.referer || '';
+        const refererOk = referer && (() => { try { return originOk(new URL(referer).origin); } catch (e) { return false; } })();
+        const trusted = origin ? originOk(origin) : (refererOk || clientIsLoopback);
+        if (!trusted) {
+            auditLog(req, 'csrf.reject', req.url, 'blocked');
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'cross-origin request rejected' }));
+            return;
+        }
     }
     // ── gate 3: optional password gate (env DASHBOARD_PASSWORD or a setup password) ──
     if (authEnabled()) {
         if (req.url === '/api/login' && req.method === 'POST') {
             const body = await readJsonBody(req).catch(() => ({}));
-            const submitted = sha256hex((body && body.password) || '');
-            const target = authPasswordHash();
-            const ok = submitted.length === target.length && crypto.timingSafeEqual(Buffer.from(submitted), Buffer.from(target));
+            const pw = (body && body.password) || '';
+            const target = authTarget();
+            const ok = verifyPassword(pw, target);
             auditLog(req, 'auth.login', '', ok ? 'ok' : 'denied');
             if (!ok) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid password' })); return; }
+            // Transparently upgrade a legacy sha256 vault hash to scrypt on success.
+            if (!_envAuthTarget && /^[0-9a-f]{64}$/i.test(String(target))) { try { setVaultAuthPassword(pw); } catch (e) {} }
             issueSession(req, res);
+            return;
+        }
+        if (req.url === '/api/logout' && req.method === 'POST') {
+            const tok = parseCookies(req).cc_session || '';
+            if (tok) _sessions.delete(tok);
+            auditLog(req, 'auth.logout', '', 'ok');
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': `cc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
+            res.end(JSON.stringify({ ok: true }));
             return;
         }
         // Endpoints reachable WITHOUT a session even when auth is on:
@@ -3057,10 +2054,12 @@ const server = http.createServer(async (req, res) => {
         if (authPasswordFromEnv()) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'password is managed by DASHBOARD_PASSWORD in the environment' })); return; }
         const body = await readJsonBody(req).catch(() => ({}));
         const pw = String((body && body.password) || '');
-        if (pw && pw.length < 6) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'password must be at least 6 characters' })); return; }
+        if (pw && pw.length < 12) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'password must be at least 12 characters' })); return; }
         setVaultAuthPassword(pw || '');
         auditLog(req, 'auth.set-password', '', pw ? 'set' : 'cleared');
-        if (pw) { issueSession(req, res, { enabled: true }); return; }   // keep the user signed in
+        // Rotate: invalidate the caller's prior session token before issuing a fresh one.
+        const oldTok = parseCookies(req).cc_session || ''; if (oldTok) _sessions.delete(oldTok);
+        if (pw) { issueSession(req, res, { enabled: true }); return; }   // keep the user signed in with a new token
         res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, enabled: false }));
         return;
     }
@@ -3104,11 +2103,10 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.url === '/' || req.url === '/index.html') {
-        // The GAUGE UI (app-v2.html) IS the dashboard. v1 (app.html) is retired and
-        // no route serves it anymore.
+        // The GAUGE UI is the dashboard, served with CSP + hardening headers.
         fs.readFile(path.join(__dirname, 'app.html'), (err, data) => {
             if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('app.html not found'); return; }
-            res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' });
+            res.writeHead(200, Object.assign({ 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache', 'Expires': '0' }, securityHeaders(req)));
             res.end(injectDashboardSettings(data.toString('utf8')));
         });
     } else if (['/v2', '/v2.html', '/app-v2.html', '/app', '/app.html', '/classic', '/classic.html'].includes(req.url)) {
@@ -3267,21 +2265,6 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('device image error');
         }
-    } else if (req.url === '/api/operator') {
-        try {
-            const out = await operatorStatus();
-            res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-            res.end(JSON.stringify(out));
-        } catch (err) {
-            res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-            res.end(JSON.stringify({ error: err.message || 'Operator status unavailable' }));
-        }
-    } else if (req.url === '/api/operator/action' && req.method === 'POST') {
-        const payload = await readJsonBody(req);
-        const result = await operatorAction(String(payload.action || ''));
-        auditLog(req, 'operator.action', String(payload.action || ''), result.ok ? 'ok' : 'failed');
-        res.writeHead(result.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-        res.end(JSON.stringify(result));
     } else if (req.url === '/api/stream') {
         // SSE realtime: status/host/media channels. The gate above already applied
         // rate-limiting + (opt-in) auth, same as every other /api route.
@@ -3575,7 +2558,7 @@ const server = http.createServer(async (req, res) => {
         if (!target.searchParams.get('to')) target.searchParams.set('to', 'now');
         const lib = target.protocol === 'https:' ? require('https') : require('http');
         const opts = { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'image/png' }, timeout: 25000 };
-        if (target.protocol === 'https:') opts.rejectUnauthorized = false;
+        if (target.protocol === 'https:') opts.rejectUnauthorized = !ALLOW_INSECURE_TLS;
         const gReq = lib.get(target, opts, (gRes) => {
             if (gRes.statusCode < 200 || gRes.statusCode >= 300) {
                 gRes.resume();
