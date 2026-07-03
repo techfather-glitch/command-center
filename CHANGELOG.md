@@ -30,6 +30,10 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with its `child_process` exec surface.
 
 ### Added
+- **Logs concept** — a dedicated fleet log floor: a container rail beside a live
+  tailing viewport with a line filter and a Follow toggle (polls every 3s, and
+  self-cancels the moment you leave the page). Built on the existing Docker log
+  proxy; self-gates into the nav only when a real Docker host is connected.
 - **Smart Home concept** — a new top-level page backed by **Home Assistant**
   (promoted out of Automation). The enriched adapter reports lights, switches,
   climate, locks, presence and device health from `/api/states`; the page pairs
