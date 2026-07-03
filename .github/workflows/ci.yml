@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Syntax & smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check the server
+        run: node --check server.js
+      - name: Boot in demo mode and probe endpoints
+        run: |
+          DEMO=1 PORT=8899 node server.js &
+          SERVER_PID=$!
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8899/api/meta >/dev/null && break
+            sleep 0.5
+          done
+          echo "meta:"      && curl -sf http://127.0.0.1:8899/api/meta | head -c 200 && echo
+          echo "status:"    && curl -sf http://127.0.0.1:8899/api/status | head -c 120 && echo
+          echo "containers:" && curl -sf http://127.0.0.1:8899/api/containers/summary | head -c 120 && echo
+          kill $SERVER_PID
+
+  no-secrets:
+    name: No private data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard against leaked private data
+        run: |
+          # Fail if any real-looking private IPs, keys or personal markers slip in.
+          PATTERN='192\.168\.(50|4)\.|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY|glsa_[A-Za-z0-9]{16}|xoxb-[0-9]'
+          if grep -rInE "$PATTERN" --include='*.js' --include='*.html' --include='*.md' --include='*.yml' .; then
+            echo "::error::Potential private data found — see matches above."
+            exit 1
+          fi
+          echo "No private-data markers found."
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t command-center:ci .
+      - name: Run container health probe
+        run: |
+          docker run -d --name cc -e DEMO=1 -p 8898:8888 command-center:ci
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8898/api/meta >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8898/api/status | head -c 120
+          docker rm -f cc

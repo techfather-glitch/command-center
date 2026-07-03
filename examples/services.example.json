@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Plex",
+    "host": "plex.local",
+    "port": 32400,
+    "type": "Media Server",
+    "url": "https://plex.example.com"
+  },
+  {
+    "name": "Sonarr",
+    "host": "sonarr.local",
+    "port": 8989,
+    "type": "*Arr"
+  },
+  {
+    "name": "Node Exporter",
+    "host": "nas.local",
+    "port": 9100,
+    "type": "Monitor"
+  }
+]

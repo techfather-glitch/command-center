@@ -1,0 +1,8 @@
+# Normalize line endings to LF across platforms.
+* text=auto eol=lf
+
+# Binary assets — never touch.
+*.woff2 binary
+*.png binary
+*.svg -text
+*.ico binary

@@ -1,0 +1,38 @@
+name: Feature request
+description: Suggest an idea or a new provider.
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of request is this?
+      options:
+        - New provider / integration
+        - New feature
+        - Improvement to an existing feature
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the need, not just the solution. What can't you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: For a new provider, link its API docs and note the auth method.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Fit with project goals
+      description: Command Center favors zero dependencies and never fakes data.
+      options:
+        - label: This can be built without adding a runtime dependency (or I've explained why one is needed).

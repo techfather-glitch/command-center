@@ -1,0 +1,8 @@
+# Caddy — automatic HTTPS, correct forwarded headers, SSE-friendly.
+# Then set PUBLIC_URL=https://cc.example.com on the Command Center container.
+
+cc.example.com {
+	# Caddy sets X-Forwarded-Proto/Host automatically and does not buffer,
+	# so Server-Sent Events (the /api/stream live feed) work out of the box.
+	reverse_proxy localhost:8888
+}

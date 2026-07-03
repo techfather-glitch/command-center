@@ -1,0 +1,41 @@
+{
+  "name": "command-center",
+  "version": "2.0.0",
+  "description": "Mission control for your homelab — a self-hosted, real-time operations dashboard that unifies servers, containers, network, storage and media behind a common provider interface.",
+  "type": "commonjs",
+  "main": "server.js",
+  "bin": {
+    "command-center": "server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "demo": "node -e \"process.env.DEMO='1';require('./server.js')\"",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "server.js",
+    "app.html",
+    "assets"
+  ],
+  "keywords": [
+    "homelab",
+    "dashboard",
+    "self-hosted",
+    "monitoring",
+    "docker",
+    "unifi",
+    "truenas",
+    "plex",
+    "operations",
+    "mission-control"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OWNER/command-center.git"
+  },
+  "dependencies": {}
+}

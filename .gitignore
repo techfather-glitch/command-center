@@ -1,0 +1,24 @@
+# ── runtime state (never commit) ──
+/data/
+dashboard-settings.json
+dashboard-secrets.json
+dashboard-secret.key
+dashboard-audit.log
+operator-state.json
+operator-events.jsonl
+services.json
+
+# ── local env & secrets ──
+.env
+*.local
+
+# Note: assets/ (self-hosted icons + fonts) IS committed so first paint never
+# hits a CDN. The server tops up the icon cache at runtime for any new slug.
+
+# ── OS / editor cruft ──
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+.vscode/
+.idea/

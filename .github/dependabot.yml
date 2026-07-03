@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Command Center has no runtime npm dependencies, so we only track the tooling
+  # that ships in this repo: GitHub Actions and the Docker base image.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "ci"]
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "docker"]

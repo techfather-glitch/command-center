@@ -1,0 +1,64 @@
+name: Bug report
+description: Something isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. A reproduction in **demo mode**
+        (`DEMO=1`) is the fastest path to a fix and keeps your real infrastructure private.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+      placeholder: When I open the Networking page, the topology map is empty even though UniFi is connected…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start with `DEMO=1 node server.js`
+        2. Go to #/networking
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How are you running it?
+      options:
+        - Docker
+        - Docker Compose
+        - Bare Node.js
+        - Demo mode
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: From Settings → About, or the image tag.
+      placeholder: 2.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Browser, OS, reverse proxy (if any). Paste "Copy diagnostics" from Settings → About.
+  - type: textarea
+    id: console
+    attributes:
+      label: Console / server errors
+      description: Any errors from the browser console or server logs.
+      render: shell
+  - type: checkboxes
+    id: sanitized
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have removed any personal IPs, hostnames, tokens and media titles from this report.
+          required: true

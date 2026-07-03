@@ -1,0 +1,22 @@
+# Traefik — Command Center behind Traefik with automatic HTTPS.
+# Assumes a Traefik instance with a "websecure" entrypoint and an ACME resolver
+# named "le". Set PUBLIC_URL to match the Host rule.
+services:
+  command-center:
+    image: ghcr.io/OWNER/command-center:latest
+    container_name: command-center
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PUBLIC_URL=https://cc.example.com
+      - TRUST_PROXY=1
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cc.rule=Host(`cc.example.com`)"
+      - "traefik.http.routers.cc.entrypoints=websecure"
+      - "traefik.http.routers.cc.tls.certresolver=le"
+      - "traefik.http.services.cc.loadbalancer.server.port=8888"
+    restart: unless-stopped
+
+# Traefik forwards X-Forwarded-* headers by default and streams responses, so
+# the /api/stream live feed works without extra configuration.

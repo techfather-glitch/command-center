@@ -1,0 +1,21 @@
+# Command Center — Docker Compose deployment.
+# 1. cp .env.example .env  (optional; every variable has a sane default)
+# 2. docker compose up -d
+# 3. open http://localhost:8888
+services:
+  command-center:
+    image: ghcr.io/OWNER/command-center:latest
+    # To build locally instead of pulling, comment out `image:` and use:
+    # build: .
+    container_name: command-center
+    ports:
+      - "${PORT:-8888}:8888"
+    volumes:
+      - ./data:/app/data          # settings, encrypted vault, audit log
+    environment:
+      - TZ=${TZ:-UTC}
+      - DEMO=${DEMO:-}                       # set to 1 to explore with synthetic data
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
+      - PUBLIC_URL=${PUBLIC_URL:-}
+      - TRUST_PROXY=${TRUST_PROXY:-1}
+    restart: unless-stopped
