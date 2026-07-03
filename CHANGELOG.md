@@ -30,6 +30,11 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with its `child_process` exec surface.
 
 ### Added
+- **Smoke test suite** (`test/smoke.test.js`, Node's built-in runner, zero deps)
+  — asserts every provider adapter's `normalize()` survives empty/partial data
+  and shapes a realistic response correctly, plus the security primitives
+  (scrypt hashing + legacy fallback, request templating, response headers,
+  redaction). Wired into CI; `server.js` is now importable without binding a port.
 - **Logs concept** — a dedicated fleet log floor: a container rail beside a live
   tailing viewport with a line filter and a Follow toggle (polls every 3s, and
   self-cancels the moment you leave the page). Built on the existing Docker log

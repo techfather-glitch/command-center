@@ -20,6 +20,8 @@ jobs:
           node-version: 22
       - name: Syntax check the server
         run: node --check server.js
+      - name: Run smoke tests
+        run: node --test
       - name: Boot in demo mode and probe endpoints
         run: |
           DEMO=1 PORT=8899 node server.js &

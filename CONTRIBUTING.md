@@ -26,12 +26,25 @@ Work against `DEMO=1` whenever you can: it gives you a full, realistic homelab
 with zero setup and keeps your real infrastructure out of screenshots and bug
 reports.
 
+Run the checks before opening a PR (CI runs the same):
+
+```bash
+npm run check     # syntax-check the server
+npm test          # smoke tests (Node's built-in runner, zero deps)
+```
+
+The smoke suite (`test/smoke.test.js`) asserts every provider adapter's
+`normalize()` survives empty/partial data and shapes a realistic response
+correctly, plus the security primitives (scrypt hashing, request templating,
+response headers, redaction). If you add a provider, add a case.
+
 ## Project layout
 
 | File | What lives here |
 |---|---|
 | `server.js` | Backend: HTTP routes, provider adapters, vault, SSE hub, security gate. |
 | `app.html` | Frontend: router, provider registry, page renderers, GAUGE CSS. |
+| `test/` | Smoke tests — `node --test`, zero dependencies. |
 | `assets/` | Self-hosted icons + fonts. |
 | `docs/` | Deeper guides. |
 | `examples/` | Compose, env, reverse-proxy configs. |

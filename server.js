@@ -2939,14 +2939,23 @@ const server = http.createServer(async (req, res) => {
     }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🐉 Dashboard running at http://127.0.0.1:${PORT}/`);
-});
+// Bind the port and start background samplers only when run directly
+// (`node server.js`). Requiring this module — e.g. from the smoke-test suite —
+// must have no side effects, so the server never binds during tests.
+if (require.main === module) {
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`🐉 Dashboard running at http://127.0.0.1:${PORT}/`);
+    });
 
-// Continuously sample WAN throughput in the background so the dashboard
-// sparkline is already populated on first paint (reuses the cached session).
-setInterval(() => {
-    const s = safeUnifiSettings(storedUnifiSettings());
-    if (!s.url || !s.username || !s.password) return;
-    queryUnifiStatus().catch(() => {});
-}, 8 * 1000).unref();
+    // Continuously sample WAN throughput in the background so the dashboard
+    // sparkline is already populated on first paint (reuses the cached session).
+    setInterval(() => {
+        const s = safeUnifiSettings(storedUnifiSettings());
+        if (!s.url || !s.username || !s.password) return;
+        queryUnifiStatus().catch(() => {});
+    }, 8 * 1000).unref();
+}
+
+// Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
+// Thanks to the require.main guard above, importing this module starts nothing.
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL };

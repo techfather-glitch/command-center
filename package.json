@@ -10,7 +10,8 @@
   "scripts": {
     "start": "node server.js",
     "demo": "node -e \"process.env.DEMO='1';require('./server.js')\"",
-    "check": "node --check server.js"
+    "check": "node --check server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"

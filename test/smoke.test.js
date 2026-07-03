@@ -1,0 +1,276 @@
+'use strict';
+// Smoke tests for Command Center — zero dependencies, Node's built-in runner.
+//   node --test            (from the repo root)
+//
+// Two goals:
+//   1. Every provider adapter's normalize() must survive empty/partial data
+//      without throwing, and produce the right shape on a realistic response.
+//      (The adapters are the riskiest surface — this is the safety net.)
+//   2. The security primitives (password hashing, template substitution,
+//      response headers, secret redaction) behave as claimed.
+
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+// Point the server at a throwaway data dir so requiring it can never write a
+// vault key into the repo. The require.main guard means nothing binds a port.
+process.env.DATA_DIR = path.join(os.tmpdir(), 'cc-smoke-' + process.pid);
+
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const cc = require('../server.js');
+
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL } = cc;
+
+// ── helpers ──────────────────────────────────────────────────────────────
+const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
+const fval = (out, rx) => { const f = field(out, rx); return f ? f.value : undefined; };
+
+// ── 1. adapter normalize(): null-safety across the whole registry ─────────
+test('every adapter normalize() survives empty data without throwing', () => {
+  const offenders = [];
+  for (const [id, def] of Object.entries(INTEGRATIONS)) {
+    if (typeof def.normalize !== 'function') continue;
+    let out;
+    try { out = def.normalize({}, { base: 'http://x', cfg: {} }); }
+    catch (e) { offenders.push(`${id}: threw ${e.message}`); continue; }
+    if (out != null && typeof out !== 'object') offenders.push(`${id}: returned ${typeof out}`);
+  }
+  assert.deepEqual(offenders, [], 'adapters that mishandle empty data:\n' + offenders.join('\n'));
+});
+
+test('every adapter also survives a single-key partial response', () => {
+  const offenders = [];
+  for (const [id, def] of Object.entries(INTEGRATIONS)) {
+    if (typeof def.normalize !== 'function' || !Array.isArray(def.requests)) continue;
+    for (const rq of def.requests) {
+      const raw = {}; raw[rq.id] = null;   // this request came back null/failed
+      try { def.normalize(raw, { base: 'http://x', cfg: {} }); }
+      catch (e) { offenders.push(`${id} (${rq.id}=null): ${e.message}`); }
+    }
+  }
+  assert.deepEqual(offenders, [], 'adapters that throw on a null request:\n' + offenders.join('\n'));
+});
+
+// ── 2. adapter normalize(): realistic responses produce the right shape ───
+const CASES = {
+  ollama: {
+    raw: {
+      tags: { models: [
+        { name: 'llama3.1:8b', size: 4.6e9, details: { parameter_size: '8B', quantization_level: 'Q4' } },
+        { name: 'embed', size: 3e8, details: {} },
+      ] },
+      ps: { models: [{ name: 'llama3.1:8b', size_vram: 5.1e9 }] },
+      ver: { version: '0.5.4' },
+    },
+    check: (o) => {
+      assert.equal(fval(o, '^Models$'), 2, 'Models count');
+      assert.equal(fval(o, 'Loaded'), 1, 'Loaded count');
+      assert.equal(o.version, '0.5.4');
+      assert.equal(o.ok, true);
+      assert.ok(o.items.some(m => m.state === 'good'), 'loaded model highlighted');
+    },
+  },
+  homeassistant: {
+    raw: {
+      config: { version: '2026.6.1' },
+      states: [
+        { entity_id: 'light.a', state: 'on', attributes: { friendly_name: 'A' } },
+        { entity_id: 'light.b', state: 'off' },
+        { entity_id: 'lock.c', state: 'unlocked', attributes: { friendly_name: 'Back Door' } },
+        { entity_id: 'sensor.d', state: 'unavailable', attributes: { friendly_name: 'Shed' } },
+      ],
+    },
+    check: (o) => {
+      assert.equal(o.gauge.label, 'Available');
+      assert.equal(o.gauge.value, 75, '3 of 4 available');
+      assert.equal(fval(o, 'Lights on'), '1/2');
+      assert.equal(o.version, '2026.6.1');
+      assert.ok(o.items.some(i => /unlocked/i.test(i.value)), 'unlocked door flagged');
+      assert.ok(o.items.some(i => /unavailable/i.test(i.value)), 'offline device flagged');
+    },
+  },
+  kubernetes: {
+    raw: {
+      version: { gitVersion: 'v1.30.2' },
+      nodes: { items: [{ status: { conditions: [{ type: 'Ready', status: 'True' }] } }] },
+      pods: { items: [{ status: { phase: 'Running' } }, { status: { phase: 'Pending' } }] },
+    },
+    check: (o) => {
+      assert.equal(o.gauge.label, 'Nodes Ready');
+      assert.equal(o.gauge.value, 100);
+      assert.equal(fval(o, '^Nodes$'), 1);
+      assert.equal(fval(o, 'Pods Running'), 1);
+      assert.equal(o.ok, true);
+    },
+  },
+  incus: {
+    raw: {
+      instances: { metadata: [
+        { status: 'Running', type: 'container' },
+        { status: 'Stopped', type: 'virtual-machine' },
+      ] },
+      server: { metadata: { environment: { server_version: '6.1' }, auth: 'trusted' } },
+    },
+    check: (o) => {
+      assert.equal(fval(o, 'Instances'), 2);
+      assert.equal(fval(o, '^Running$'), 1);
+      assert.equal(fval(o, 'VMs'), 1);
+      assert.equal(fval(o, 'Containers'), 1);
+      assert.equal(o.version, '6.1');
+      assert.equal(o.ok, true);
+    },
+  },
+  emby: {
+    raw: {
+      info: { Version: '4.8.11', OperatingSystemDisplayName: 'Linux', HasUpdateAvailable: false },
+      sessions: [{ NowPlayingItem: { Name: 'x' }, PlayState: { IsPaused: false } }],
+    },
+    check: (o) => {
+      assert.equal(fval(o, 'Streams'), 1);
+      assert.equal(o.version, '4.8.11');
+      assert.equal(o.ok, true);
+    },
+  },
+  podman: {
+    raw: {
+      info: { host: { memTotal: 16e9, memFree: 8e9, cpus: 8 }, store: { containerStore: { number: 5, running: 3, stopped: 2 }, graphDriverName: 'overlay' }, version: { Version: '5.0.0' } },
+      containers: [{ State: 'running' }, { State: 'running' }, { State: 'running' }, { State: 'exited' }, { State: 'exited' }],
+    },
+    check: (o) => {
+      assert.equal(o.gauge.label, 'Memory Used');
+      assert.equal(o.gauge.value, 50);
+      assert.equal(fval(o, 'Containers'), 5);
+      assert.equal(o.version, '5.0.0');
+    },
+  },
+  opnsense: {
+    raw: {
+      status: { status: 'OK' },
+      info: { versions: ['24.7.3'] },
+      res: { memory: { total: 8e9, used: 2e9 } },
+      time: { uptime: '3 days', loadavg: '0.42' },
+    },
+    check: (o) => {
+      assert.equal(o.version, '24.7.3');
+      assert.equal(o.ok, true);
+      assert.ok(field(o, 'Health'));
+      assert.equal(o.gauge.value, 25);
+    },
+  },
+  pfsense: {
+    raw: {
+      version: { data: { version: '2.7.2' } },
+      status: { data: { cpu_usage: 20, mem_usage: 40, disk_usage: 30, uptime: '5 days', cpu_count: 4 } },
+    },
+    check: (o) => {
+      assert.equal(o.version, '2.7.2');
+      assert.equal(o.ok, true);
+      assert.equal(o.gauge.value, 40);
+    },
+  },
+  unraid: {
+    raw: {
+      online: { data: { online: true } },
+      data: { data: { info: { os: { uptime: '10 days' }, versions: { unraid: '6.12.10' } }, array: { state: 'STARTED', capacity: { kilobytes: { free: '1000', used: '3000', total: '4000' } } } } },
+    },
+    check: (o) => {
+      assert.equal(o.version, '6.12.10');
+      assert.equal(o.ok, true);
+      assert.equal(o.gauge.value, 75, 'array 3000/4000 KB used');
+      assert.equal(fval(o, 'Array'), 'STARTED');
+    },
+  },
+  sonarr: {
+    raw: { queue: { totalRecords: 3 }, missing: { totalRecords: 1 } },
+    check: (o) => {
+      assert.equal(fval(o, 'Queue'), 3);
+      assert.equal(fval(o, 'Missing'), 1);
+    },
+  },
+  plex: {
+    raw: { sessions: { MediaContainer: { size: 2, Metadata: [{ title: 'X', User: { title: 'u' } }] } } },
+    check: (o) => { assert.equal(fval(o, 'Streams'), 2); },
+  },
+};
+
+for (const [id, c] of Object.entries(CASES)) {
+  test(`adapter normalize(): ${id} on a realistic response`, () => {
+    const def = INTEGRATIONS[id];
+    assert.ok(def, `${id} exists in the registry`);
+    const out = def.normalize(c.raw, { base: 'http://x', cfg: {} });
+    assert.ok(out && typeof out === 'object');
+    c.check(out);
+  });
+}
+
+// ── 3. declared write-actions are well-formed ─────────────────────────────
+test('every declared provider action has an id, label, method and path', () => {
+  const bad = [];
+  for (const [id, def] of Object.entries(INTEGRATIONS)) {
+    for (const a of (def.actions || [])) {
+      if (!a.id || !a.label) bad.push(`${id}: action missing id/label`);
+      if (!a.path || !/^\//.test(a.path)) bad.push(`${id}:${a.id}: path must be an absolute route`);
+      if (a.method && !/^(GET|POST|PUT|DELETE)$/.test(a.method)) bad.push(`${id}:${a.id}: odd method ${a.method}`);
+    }
+  }
+  assert.deepEqual(bad, []);
+});
+
+// ── 4. password hashing (scrypt + legacy fallback) ────────────────────────
+test('scrypt hash round-trips and rejects the wrong password', () => {
+  const h = hashPassword('correct horse battery staple');
+  assert.match(h, /^scrypt\$/, 'stored as a scrypt digest, not plaintext/sha');
+  assert.equal(verifyPassword('correct horse battery staple', h), true);
+  assert.equal(verifyPassword('wrong', h), false);
+});
+
+test('legacy sha256 digests still verify (transparent upgrade path)', () => {
+  const legacy = crypto.createHash('sha256').update('hunter2hunter2').digest('hex');
+  assert.equal(verifyPassword('hunter2hunter2', legacy), true);
+  assert.equal(verifyPassword('nope', legacy), false);
+});
+
+test('verifyPassword is safe on empty/garbage stored values', () => {
+  assert.equal(verifyPassword('x', ''), false);
+  assert.equal(verifyPassword('x', 'not-a-hash'), false);
+  assert.equal(verifyPassword('x', null), false);
+});
+
+// ── 5. template substitution (used to build provider requests) ────────────
+test('igApplyTpl substitutes cred/cfg/base and blanks unknown keys', () => {
+  assert.equal(igApplyTpl('{{cred.key}}', { cred: { key: 'abc' } }), 'abc');
+  assert.equal(igApplyTpl('{{base}}/api', { base: 'http://h:1' }), 'http://h:1/api');
+  assert.equal(igApplyTpl('{{cfg.lat}},{{cfg.lon}}', { cfg: { lat: '1', lon: '2' } }), '1,2');
+  assert.equal(igApplyTpl('{{cred.missing}}', { cred: {} }), '', 'unknown key -> empty, not literal');
+});
+
+test('igApplyTpl leaves single braces alone (GraphQL bodies are safe)', () => {
+  assert.equal(igApplyTpl('{ info { os } }', {}), '{ info { os } }');
+});
+
+// ── 6. security response headers ──────────────────────────────────────────
+test('securityHeaders always sets CSP + hardening headers', () => {
+  const h = securityHeaders({ headers: {}, socket: {} });
+  assert.match(h['Content-Security-Policy'], /default-src 'self'/);
+  assert.match(h['Content-Security-Policy'], /frame-ancestors 'none'/);
+  assert.match(h['Content-Security-Policy'], /object-src 'none'/);
+  assert.equal(h['X-Frame-Options'], 'DENY');
+  assert.equal(h['X-Content-Type-Options'], 'nosniff');
+  assert.equal(h['Referrer-Policy'], 'same-origin');
+});
+
+test('HSTS is present only behind TLS, absent on plain HTTP', () => {
+  const plain = securityHeaders({ headers: {}, socket: {} });
+  assert.equal(plain['Strict-Transport-Security'], undefined);
+  const tls = securityHeaders({ headers: { 'x-forwarded-proto': 'https' }, socket: {} });
+  assert.match(tls['Strict-Transport-Security'], /max-age=/);
+});
+
+// ── 7. secret redaction sentinel ──────────────────────────────────────────
+test('the secret sentinel is a placeholder, not a real value', () => {
+  assert.equal(SECRET_SENTINEL, '***');
+  assert.equal(isSecretPlaceholder(SECRET_SENTINEL), true);
+  assert.equal(isSecretPlaceholder('••••••••'), true);
+  assert.equal(isSecretPlaceholder('a-real-api-key'), false);
+});
