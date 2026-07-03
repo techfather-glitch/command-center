@@ -15,14 +15,11 @@ The core experience is built and stable:
   SSRF / audit)
 - ✅ Responsive layouts for phone / tablet / desktop / ultrawide
 - ✅ Opt-in authentication, reverse-proxy / HTTPS awareness
+- ✅ Guided first-run setup
 - ✅ Demo mode for evaluation and documentation
 
 ## Next
 
-- **First-run onboarding wizard** — guided setup: create admin, set base URL,
-  add the first provider, verify connectivity, enter the dashboard.
-- **Multi-user accounts** — users, roles (admin/trusted/viewer), sessions and
-  device management; password reset flow.
 - **Notification channels** — in-app, email, Discord, Slack, webhook — with
   per-event control and test/preview.
 - **More provider adapters** — Unraid, Proxmox Backup Server, Scrutiny detail,

@@ -1751,6 +1751,50 @@
     .dn-np-prog { font-size: 11px; color: var(--t2); font-feature-settings: var(--tnum); }
     .dn-np-u { font: var(--f-lbl); color: var(--t4); }
 
+    /* — first-run setup overlay — */
+    .onboard { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex; align-items: center; justify-content: center; overflow-y: auto; }
+    .onboard::before { content: ''; position: fixed; inset: 0; background: radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--live) 8%, transparent), transparent 60%); pointer-events: none; }
+    .ob-shell { width: 100%; max-width: 480px; padding: 32px 22px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
+    .ob-card { width: 100%; background: var(--s1); border: 1px solid var(--hair-2); border-radius: 16px; box-shadow: var(--sh-pop); padding: 26px 26px 22px; }
+    .ob-hero { text-align: center; }
+    .ob-logo { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 14px; background: var(--s2); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1px var(--hair-2); }
+    .ob-logo svg { width: 26px; height: 26px; color: var(--live); }
+    .ob-logo.done { background: color-mix(in srgb, var(--ok) 14%, var(--s2)); }
+    .ob-title { font: 620 24px var(--mono); color: var(--t1); margin: 0 0 6px; letter-spacing: -.01em; }
+    .ob-lead { font: var(--f-read); color: var(--t2); margin: 0 auto; max-width: 360px; line-height: 1.5; }
+    .ob-head { margin-bottom: 16px; }
+    .ob-head h2 { font: 600 18px var(--font); color: var(--t1); margin: 4px 0 4px; }
+    .ob-head p { font: var(--f-lbl); color: var(--t3); margin: 0; line-height: 1.5; }
+    .ob-step { font: var(--f-eye); letter-spacing: var(--f-eye-tr); text-transform: uppercase; color: var(--live); }
+    .ob-field { margin-bottom: 12px; }
+    .ob-field label { display: block; font: var(--f-lbl); color: var(--t2); margin-bottom: 5px; }
+    .ob-field .set-input { width: 100%; min-height: 42px; }
+    .ob-opt { color: var(--t4); text-transform: none; letter-spacing: 0; }
+    .ob-note { font: var(--f-lbl); color: var(--t3); background: var(--s0); border: 1px solid var(--hair); border-radius: 10px; padding: 10px 12px; margin: 6px 0 4px; line-height: 1.5; }
+    .ob-note.ok { border-color: color-mix(in srgb, var(--ok) 32%, transparent); color: var(--t2); }
+    .ob-note code { font-family: var(--mono); font-size: 11px; color: var(--t2); background: var(--s2); padding: 1px 5px; border-radius: 4px; }
+    .ob-note a { color: var(--live); }
+    .ob-msg { font: var(--f-lbl); min-height: 16px; margin-bottom: 6px; }
+    .ob-msg.ok { color: var(--ok); } .ob-msg.bad { color: var(--crit); }
+    .ob-sub { font: var(--f-eye); letter-spacing: var(--f-eye-tr); text-transform: uppercase; color: var(--t3); margin: 14px 0 8px; }
+    .ob-provs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+    .ob-prov { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 12px 6px; border: 1px solid var(--hair); border-radius: 12px; background: var(--s0); color: var(--t2); cursor: pointer; min-height: 76px; justify-content: center; }
+    .ob-prov:hover { border-color: var(--hair-2); background: var(--s2); color: var(--t1); }
+    .ob-prov span { font: var(--f-lbl); text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+    .ob-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .ob-actions .tbtn { flex: 1; min-height: 44px; justify-content: center; }
+    .ob-actions .ob-primary { background: var(--live); color: #04110e; border-color: var(--live); font-weight: 600; }
+    .ob-actions .ob-primary:hover { background: color-mix(in srgb, var(--live) 88%, #fff); }
+    .ob-actions .ghost { flex: 0 0 auto; padding: 0 16px; }
+    .ob-fine { text-align: center; font: var(--f-lbl); color: var(--t4); margin: 14px 0 0; }
+    .ob-summary { display: flex; flex-direction: column; gap: 8px; margin: 4px 0; }
+    .ob-check { display: flex; align-items: center; gap: 10px; font: var(--f-read); color: var(--t2); }
+    .ob-dots { display: flex; gap: 7px; }
+    .ob-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--s3); }
+    .ob-dot.on { background: var(--live); width: 20px; border-radius: 4px; }
+    .ob-dot.done { background: color-mix(in srgb, var(--live) 55%, var(--s3)); }
+    body.onboarding { overflow: hidden; }
+
     /* ═══════════════════════════════════════════════════════════════════════
        RESPONSIVE LAYER — appended last so it always wins the cascade.
        Desktop (1280–1919) is the reference and is deliberately untouched here.
@@ -2119,6 +2163,8 @@
     <div class="drawer-scrim" id="drawerScrim" onclick="closeDrawer()"></div>
     <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-label="Detail"></aside>
     <aside class="uw-rail" id="uwRail" aria-label="Live context"></aside>
+    <div class="onboard" id="onboard" role="dialog" aria-modal="true" aria-label="Set up Command Center" hidden></div>
+    <div class="onboard" id="login" role="dialog" aria-modal="true" aria-label="Sign in" hidden></div>
     <nav class="botsheet" id="botsheet" aria-label="More pages"></nav>
 </div>
 <script>
@@ -2312,8 +2358,33 @@ if (route === 'containers') { svcTab = 'containers'; route = 'services'; }
 let searchTerm = '';
 
 /* ---------- data helpers ---------- */
-async function jget(url) { const r = await fetch(url, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }
-async function jpost(url, body) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); return r.json(); }
+async function jget(url) { const r = await fetch(url, { cache: 'no-store' }); if (r.status === 401) { maybeLogin(); throw new Error('sign-in required'); } if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }
+async function jpost(url, body) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); if (r.status === 401 && url !== '/api/login') maybeLogin(); return r.json(); }
+
+/* ── sign-in gate ── When a password is set (via setup or DASHBOARD_PASSWORD),
+   protected API calls return 401; the first one shows this lock screen. On
+   success we reload with the fresh session cookie. Single password, no accounts. */
+let _loginShown = false;
+function maybeLogin() { if (_loginShown) return; _loginShown = true; showLogin(); }
+function showLogin(msg) {
+    const el = document.getElementById('login'); if (!el) return;
+    document.body.classList.add('onboarding'); el.hidden = false;
+    el.innerHTML = `<div class="ob-shell"><div class="ob-card">
+        <div class="ob-hero"><div class="ob-logo">${navSvg('gear')}</div><h1 class="ob-title">${esc((Store.settings && Store.settings.appName) || 'Command Center')}</h1><p class="ob-lead">This dashboard is protected. Enter your password to continue.</p></div>
+        <form onsubmit="doLogin(event)"><div class="ob-field" style="margin-top:14px"><input class="set-input" id="loginPw" type="password" autocomplete="current-password" placeholder="Password" autofocus></div>
+        <div class="ob-msg ${msg ? 'bad' : ''}" id="loginMsg">${esc(msg || '')}</div>
+        <button class="tbtn ob-primary" type="submit" style="width:100%;min-height:44px;justify-content:center">Unlock</button></form></div></div>`;
+    const i = document.getElementById('loginPw'); if (i) setTimeout(() => i.focus(), 60);
+}
+window.doLogin = async function (ev) {
+    ev.preventDefault();
+    const pw = gv('loginPw');
+    try {
+        const r = await jpost('/api/login', { password: pw });
+        if (r.ok) { location.reload(); }
+        else showLogin(r.error || 'Incorrect password.');
+    } catch (e) { showLogin(e.message); }
+};
 
 async function refreshStatus() {
     try { const d = await jget('/api/status'); Store.services = d.services || []; Store.lastUpdate = Date.now(); Store.error = null; markFresh('status'); }
@@ -2952,6 +3023,143 @@ window.closeMore = function () { const s = document.getElementById('botsheet'); 
 function updateFoot() { trackTransitions(); renderTopbar(); renderDock(); renderUwRail(); }
 
 /* ---------- render dispatch ---------- */
+/* ═══════════════════ First-run setup ═══════════════════
+   A guided overlay shown once on a fresh install (no providers configured).
+   Independent of the router so it can't fight navigation. Steps: welcome →
+   basics → optional password → connect a provider → done. Every control is
+   real — the password actually protects the dashboard, providers actually
+   connect. Re-runnable from Settings → General. */
+let _obStep = 0, _obForce = false;
+function hasAnyProvider() {
+    return enabledIntegrations().length > 0
+        || (Store.services || []).length > 0
+        || dockerControl()
+        || !!(Store.unifi && Store.unifi.configured !== false && !Store.unifi.error)
+        || !!(Store.host && !Store.host.error && Store.host.cpuPct != null)
+        || customTiles().length > 0;
+}
+function shouldOnboard() {
+    if (window.__CC_DEMO__) return false;
+    if (_obForce) return true;
+    if (!Store.settings) return false;
+    return !Store.settings.onboarded;
+}
+function initOnboard() {
+    // Runs once after first data load. Existing installs (already have a
+    // provider) are silently marked done so upgraders never see the wizard.
+    if (window.__CC_DEMO__ || !Store.settings) return;
+    if (Store.settings.onboarded) return;
+    if (hasAnyProvider()) { saveSettings({ onboarded: true }); return; }
+    _obStep = 0; renderOnboard();
+}
+window.obRerun = function () { _obForce = true; _obStep = 0; renderOnboard(); };
+window.obGo = function (step) { _obStep = step; renderOnboard(); };
+window.obSkip = async function () { await saveSettings({ onboarded: true }); _obForce = false; hideOnboard(); toast('You can finish setup anytime in Settings → General.'); };
+window.obFinishBasics = function () {
+    const name = gv('obName') || 'Command Center';
+    const el = document.getElementById('obLanding');
+    _obDraft.appName = name; _obDraft.homeRoute = el ? el.value : 'dashboard';
+    document.title = name;
+    obGo(2);
+};
+let _obDraft = {};
+window.obSetPassword = async function () {
+    const pw = gv('obPw'), pw2 = gv('obPw2');
+    const msg = document.getElementById('obPwMsg');
+    const say = (t, bad) => { if (msg) { msg.textContent = t; msg.className = 'ob-msg' + (bad ? ' bad' : ' ok'); } };
+    if (pw.length < 6) { say('Password must be at least 6 characters.', true); return; }
+    if (pw !== pw2) { say('Passwords don\'t match.', true); return; }
+    try {
+        const r = await jpost('/api/setup/password', { password: pw });
+        if (r.ok) { say('Password set — you\'re signed in.', false); await refreshMeta(); setTimeout(() => obGo(3), 700); }
+        else say(r.error || 'Could not set password.', true);
+    } catch (e) { say(e.message, true); }
+};
+window.obFinish = async function () {
+    await saveSettings({ appName: _obDraft.appName || 'Command Center', homeRoute: _obDraft.homeRoute || 'dashboard', onboarded: true });
+    _obForce = false; hideOnboard();
+    location.hash = '#/' + (_obDraft.homeRoute || 'dashboard');
+    render(); toast('Welcome to Command Center 🎛️');
+};
+/* connect a provider from within the wizard, using the shared config drawer */
+window.openCatalogCfg = function (id) {
+    const def = (Store.integrations || []).find(x => x.id === id);
+    if (!def) { igGoSetup(id); return; }
+    openDrawer(`${iconImg(def.title, 22)}${esc(def.title)}`, `${esc(def.category)} · enter the URL and key, then Test`, `<div class="drawer-cfg">${igConfigForm(def)}</div>`, '');
+};
+function hideOnboard() { const el = document.getElementById('onboard'); if (el) { el.hidden = true; el.innerHTML = ''; } document.body.classList.remove('onboarding'); }
+function renderOnboard() {
+    const el = document.getElementById('onboard');
+    if (!el) return;
+    if (!shouldOnboard()) { hideOnboard(); return; }
+    document.body.classList.add('onboarding');
+    el.hidden = false;
+    const dots = [0, 1, 2, 3, 4].map(i => `<span class="ob-dot ${i === _obStep ? 'on' : i < _obStep ? 'done' : ''}"></span>`).join('');
+    let body;
+    if (_obStep === 0) body = obWelcome();
+    else if (_obStep === 1) body = obBasics();
+    else if (_obStep === 2) body = obAccess();
+    else if (_obStep === 3) body = obProviders();
+    else body = obDone();
+    el.innerHTML = `<div class="ob-shell"><div class="ob-card">${body}</div><div class="ob-dots">${dots}</div></div>`;
+    const first = el.querySelector('input,select,button.ob-primary'); if (first && _obStep > 0) { try { first.focus(); } catch (e) {} }
+}
+function obWelcome() {
+    return `<div class="ob-hero"><div class="ob-logo">${navSvg('grid')}</div><h1 class="ob-title">Command Center</h1><p class="ob-lead">Mission control for your homelab. Let's connect your first service — about two minutes.</p></div>
+        <div class="ob-actions"><button class="tbtn ob-primary" onclick="obGo(1)">Get started</button><button class="tbtn ghost" onclick="obSkip()">Skip, I'll explore first</button></div>
+        <p class="ob-fine">Nothing is sent anywhere. Everything runs on your server.</p>`;
+}
+function obBasics() {
+    const routes = NAV.map(n => `<option value="${n.id}" ${(_obDraft.homeRoute || 'dashboard') === n.id ? 'selected' : ''}>${esc(n.label)}</option>`).join('');
+    return `<div class="ob-head"><span class="ob-step">Step 1 of 4</span><h2>The basics</h2><p>Name it and choose where it opens. You can change these anytime.</p></div>
+        <div class="ob-field"><label>Application name</label><input class="set-input" id="obName" value="${esc(_obDraft.appName || (Store.settings && Store.settings.appName) || 'Command Center')}" placeholder="Command Center"></div>
+        <div class="ob-field"><label>Landing page</label><select class="set-input" id="obLanding">${routes}</select></div>
+        <div class="ob-actions"><button class="tbtn ghost" onclick="obGo(0)">Back</button><button class="tbtn ob-primary" onclick="obFinishBasics()">Continue</button></div>`;
+}
+function obAccess() {
+    const envManaged = Store.meta && Store.meta.authFromEnv;
+    const already = Store.meta && Store.meta.authEnabled;
+    const secure = location.protocol === 'https:';
+    const pwBlock = envManaged
+        ? `<div class="ob-note ok"><b>A password is already required</b> — it's set by <code>DASHBOARD_PASSWORD</code> in your environment.</div>`
+        : already
+        ? `<div class="ob-note ok"><b>Password protection is on.</b> You're signed in.</div>`
+        : `<div class="ob-field"><label>Dashboard password <span class="ob-opt">optional</span></label><input class="set-input" id="obPw" type="password" autocomplete="new-password" placeholder="Leave blank to skip"></div>
+           <div class="ob-field"><input class="set-input" id="obPw2" type="password" autocomplete="new-password" placeholder="Confirm password"></div>
+           <div class="ob-msg" id="obPwMsg"></div>
+           <button class="tbtn" style="margin-bottom:6px" onclick="obSetPassword()">Set password &amp; continue</button>`;
+    return `<div class="ob-head"><span class="ob-step">Step 2 of 4</span><h2>Access &amp; security</h2><p>This dashboard is open on your network by default. On a trusted LAN that's fine — or add a password.</p></div>
+        ${pwBlock}
+        <div class="ob-note ${secure ? 'ok' : ''}">${secure ? '🔒 You\'re on HTTPS.' : '🌐 Behind a reverse proxy? Set <code>PUBLIC_URL</code> and Command Center detects HTTPS automatically — cookies upgrade to Secure. See <a href="https://github.com/techfather-glitch/command-center/blob/main/INSTALL.md#reverse-proxy--https" target="_blank" rel="noopener">the docs</a>.'}</div>
+        <div class="ob-actions"><button class="tbtn ghost" onclick="obGo(1)">Back</button><button class="tbtn ob-primary" onclick="obGo(3)">${(envManaged || already) ? 'Continue' : 'Skip for now'}</button></div>`;
+}
+function obProviders() {
+    let disc = []; try { disc = discoverIntegrations() || []; } catch (e) {}
+    const popular = ['plex', 'jellyfin', 'sonarr', 'radarr', 'qbittorrent', 'proxmox', 'adguard', 'homeassistant', 'portainer', 'grafana'];
+    const cat = Store.integrations || [];
+    const pick = id => cat.find(d => d.id === id);
+    const chip = d => `<button class="ob-prov" onclick="openCatalogCfg('${d.id}')">${iconImg(d.title, 26)}<span>${esc(d.title)}</span></button>`;
+    const discRow = disc.length ? `<div class="ob-sub">✨ Found on your network</div><div class="ob-provs">${disc.slice(0, 8).map(d => chip(d)).join('')}</div>` : '';
+    const popRow = `<div class="ob-sub">${disc.length ? 'Or pick a popular one' : 'Pick a provider to connect'}</div><div class="ob-provs">${popular.map(pick).filter(Boolean).map(chip).join('')}</div>`;
+    const connected = enabledIntegrations().length;
+    return `<div class="ob-head"><span class="ob-step">Step 3 of 4</span><h2>Connect a provider</h2><p>Pick a service — enter its URL and key, hit <b>Test</b>, then <b>Enable</b>. The relevant page fills in with live data.</p></div>
+        ${discRow}${popRow}
+        <div class="ob-note">${connected ? `<b>${connected} provider${connected === 1 ? '' : 's'} connected.</b> Add more or continue.` : 'Providers are stored encrypted — your keys are never shown again. You can also add these later in Settings.'}</div>
+        <div class="ob-actions"><button class="tbtn ghost" onclick="obGo(2)">Back</button><button class="tbtn ob-primary" onclick="obGo(4)">${connected ? 'Continue' : 'Skip for now'}</button></div>`;
+}
+function obDone() {
+    const connected = enabledIntegrations().length + ((Store.services || []).length ? 1 : 0);
+    const authOn = Store.meta && Store.meta.authEnabled;
+    const line = (ok, t) => `<div class="ob-check"><span class="dot ${ok ? 'ok' : 'idle'}"></span>${t}</div>`;
+    return `<div class="ob-hero"><div class="ob-logo done">${navSvg('grid')}</div><h1 class="ob-title">You're set</h1><p class="ob-lead">Command Center is ready. It fills itself in as providers report — nothing is faked.</p></div>
+        <div class="ob-summary">
+            ${line(true, 'Dashboard configured')}
+            ${line(authOn, authOn ? 'Password protection on' : 'Open on your network (no password)')}
+            ${line(enabledIntegrations().length > 0, enabledIntegrations().length ? enabledIntegrations().length + ' provider' + (enabledIntegrations().length === 1 ? '' : 's') + ' connected' : 'No providers yet — add them anytime in Settings')}
+        </div>
+        <div class="ob-actions"><button class="tbtn ghost" onclick="obGo(3)">Back</button><button class="tbtn ob-primary" onclick="obFinish()">Enter Command Center →</button></div>`;
+}
+
 function render() {
     _verdict = null;
     trackTransitions();
@@ -5104,7 +5312,7 @@ async function igSave(id, enable) {
     if (enable != null) cfg.enabled = enable; integrations[id] = cfg;
     return await saveSettings({ endpoints, apiKeys, integrations }, 'Saving…');
 }
-window.igSaveEnable = async function (id) { if (await igSave(id, true)) { await refreshIntegrations(); await refreshWidget(id); render(); const d = (Store.integrations || []).find(x => x.id === id); toast((d ? d.title : 'Integration') + ' enabled ✓'); } };
+window.igSaveEnable = async function (id) { if (await igSave(id, true)) { await refreshIntegrations(); await refreshWidget(id); render(); const ob = document.getElementById('onboard'); if (ob && !ob.hidden) renderOnboard(); const d = (Store.integrations || []).find(x => x.id === id); toast((d ? d.title : 'Integration') + ' enabled ✓'); } };
 window.igDisable = async function (id) { const s = Store.settings || {}; const integrations = Object.assign({}, s.integrations); integrations[id] = Object.assign({}, integrations[id], { enabled: false }); if (await saveSettings({ integrations }, 'Disabling…')) { await refreshIntegrations(); render(); toast('Disabled'); } };
 /* Dropped Needle "Sign in with Plex": DN mints a plex.tv PIN, the user approves it
    in their Plex account, we poll until DN issues its session token (stored server-
@@ -5197,7 +5405,7 @@ const SET_SECTIONS = [
 ];
 /* Searchable index over every setting — section + label + keywords. */
 const SET_INDEX = [
-    ['general', 'Application name', 'title brand rename'], ['general', 'Landing page', 'home default start route'], ['general', 'Recently changed', 'history recent'],
+    ['general', 'Application name', 'title brand rename'], ['general', 'Landing page', 'home default start route'], ['general', 'Recently changed', 'history recent'], ['general', 'Run setup wizard', 'first-run onboarding re-run guided setup'],
     ['appearance', 'Accent color', 'theme teal palette'], ['appearance', 'Density', 'compact comfortable spacing'], ['appearance', 'Reduced motion', 'animation accessibility a11y'], ['appearance', 'Custom tiles', 'bookmark iframe widget api tile'],
     ['providers', 'Provider cards', 'connect integration configure test'], ['providers', 'UniFi', 'network controller'], ['providers', 'Docker', 'containers socket'], ['providers', 'Grafana', 'panels token'], ['providers', 'TrueNAS', 'storage api key'], ['providers', 'Tracearr', 'media streams key'], ['providers', 'Dropped Needle', 'music plex sign in'], ['providers', 'Add provider', 'catalog browse integration'],
     ['fleet', 'Add service', 'probe monitor port'], ['fleet', 'Hidden services', 'restore hide'],
@@ -5361,7 +5569,8 @@ function settingsGeneral() {
         <div class="insp-row"><span class="insp-k">Realtime stream</span><span class="insp-v">${Live.connected ? 'connected — status 10s · host 15s · media 5s' : 'reconnecting (20s poll fallback)'}</span></div>
         <div class="insp-row"><span class="insp-k">Background tick</span><span class="insp-v">20s · route data + history</span></div>
         <div class="insp-row"><span class="insp-k">Media fast lane</span><span class="insp-v">8s while Media/Automation is open</span></div></div>
-    ${recent.length ? `<div class="card" style="margin-top:14px"><div class="card-title">Recently changed</div>${recent.map(r => `<div class="insp-row"><span class="insp-k">${esc(r.k)}</span><span class="insp-v">${fmtAgo(r.ts)}</span></div>`).join('')}</div>` : ''}`;
+    ${recent.length ? `<div class="card" style="margin-top:14px"><div class="card-title">Recently changed</div>${recent.map(r => `<div class="insp-row"><span class="insp-k">${esc(r.k)}</span><span class="insp-v">${fmtAgo(r.ts)}</span></div>`).join('')}</div>` : ''}
+    <div class="card" style="margin-top:14px"><div class="card-title">First-run setup</div><div class="set-desc" style="margin-bottom:10px">Re-run the guided setup — walk through the basics, password and your first provider again.</div><button class="tbtn" onclick="obRerun()">Run setup wizard</button></div>`;
 }
 window.saveGeneral = async function () {
     const appName = gv('setAppName') || 'Command Center';
@@ -5721,7 +5930,7 @@ render();         // first paint with whatever we have (settings injected)
 initTileDnd();    // enable drag-to-reorder on the dashboard tile grid
 initCharts();     // hover crosshair + tooltip + synced time-range on live charts
 refreshIntegrations();   // integration catalog is static — fetch once (Settings + discovery), not every poll
-refreshAll();     // core + current-route data
+refreshAll().then(() => { refreshMeta().catch(() => {}); initOnboard(); });   // first-run setup decision after first data
 Live.start();     // SSE realtime — status/host/media pushed by the server
 setInterval(() => { Live.connected ? reducedTick() : refreshAll(); }, 20000);
 // Tick the connection badge between repaints without a full re-render.

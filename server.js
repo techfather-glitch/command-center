@@ -2796,9 +2796,28 @@ function rateLimited(ip) {
     b.tokens -= 1;
     return false;
 }
-const AUTH_PASSWORD = process.env.DASHBOARD_PASSWORD || '';
+// Auth password can come from the environment (DASHBOARD_PASSWORD, for GitOps /
+// container secrets) OR be set once during first-run setup (stored as a SHA-256
+// hash in the encrypted vault). Both are honored; env wins if both are present.
+// Auth is entirely optional — if neither is set, the dashboard is open.
 const _sessions = new Map();   // token -> expiry ms
 const SESSION_TTL_MS = 12 * 3600 * 1000;
+function sha256hex(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
+function storedAuthHash() { try { return (readSecretVault().auth || {}).passwordHash || ''; } catch (e) { return ''; } }
+function authPasswordHash() { return process.env.DASHBOARD_PASSWORD ? sha256hex(process.env.DASHBOARD_PASSWORD) : storedAuthHash(); }
+function authEnabled() { return !!authPasswordHash(); }
+function authPasswordFromEnv() { return !!process.env.DASHBOARD_PASSWORD; }
+function setVaultAuthPassword(pw) {
+    const v = readSecretVault(); v.auth = v.auth || {};
+    if (pw) v.auth.passwordHash = sha256hex(pw); else delete v.auth.passwordHash;
+    writeSecretVault(v);
+}
+function issueSession(req, res, extra) {
+    const tok = crypto.randomBytes(32).toString('hex');
+    _sessions.set(tok, Date.now() + SESSION_TTL_MS);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(req, 'cc_session', tok, SESSION_TTL_MS / 1000) });
+    res.end(JSON.stringify(Object.assign({ ok: true }, extra || {})));
+}
 function parseCookies(req) { const out = {}; String(req.headers.cookie || '').split(';').forEach(p => { const i = p.indexOf('='); if (i > 0) out[p.slice(0, i).trim()] = p.slice(i + 1).trim(); }); return out; }
 function hasSession(req) {
     const tok = parseCookies(req).cc_session || '';
@@ -3010,24 +3029,40 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: 'cross-origin request rejected' }));
         return;
     }
-    // ── gate 3: optional password gate (opt-in via DASHBOARD_PASSWORD) ──
-    if (AUTH_PASSWORD) {
+    // ── gate 3: optional password gate (env DASHBOARD_PASSWORD or a setup password) ──
+    if (authEnabled()) {
         if (req.url === '/api/login' && req.method === 'POST') {
             const body = await readJsonBody(req).catch(() => ({}));
-            const ok = timingSafeMatch(body && body.password, AUTH_PASSWORD);
+            const submitted = sha256hex((body && body.password) || '');
+            const target = authPasswordHash();
+            const ok = submitted.length === target.length && crypto.timingSafeEqual(Buffer.from(submitted), Buffer.from(target));
             auditLog(req, 'auth.login', '', ok ? 'ok' : 'denied');
             if (!ok) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid password' })); return; }
-            const tok = crypto.randomBytes(32).toString('hex');
-            _sessions.set(tok, Date.now() + SESSION_TTL_MS);
-            res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(req, 'cc_session', tok, SESSION_TTL_MS / 1000) });
-            res.end(JSON.stringify({ ok: true }));
+            issueSession(req, res);
             return;
         }
-        if (req.url.startsWith('/api/') && req.url !== '/api/stream' && !hasSession(req)) {
+        // Endpoints reachable WITHOUT a session even when auth is on:
+        //   /api/login (above), /api/stream handshake, /api/meta (liveness).
+        const open = req.url === '/api/stream' || req.url === '/api/meta';
+        if (req.url.startsWith('/api/') && !open && !hasSession(req)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'authentication required', login: '/api/login' }));
             return;
         }
+    }
+    // ── first-run setup: set (or clear) the optional dashboard password ──
+    // Open while no auth exists yet (first run); requires a session once auth is on.
+    if (req.url === '/api/setup/password' && req.method === 'POST') {
+        if (authEnabled() && !hasSession(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'authentication required' })); return; }
+        if (authPasswordFromEnv()) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'password is managed by DASHBOARD_PASSWORD in the environment' })); return; }
+        const body = await readJsonBody(req).catch(() => ({}));
+        const pw = String((body && body.password) || '');
+        if (pw && pw.length < 6) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'password must be at least 6 characters' })); return; }
+        setVaultAuthPassword(pw || '');
+        auditLog(req, 'auth.set-password', '', pw ? 'set' : 'cleared');
+        if (pw) { issueSession(req, res, { enabled: true }); return; }   // keep the user signed in
+        res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, enabled: false }));
+        return;
     }
 
     // ── demo mode: synthetic data endpoints, real handler for everything else ──
@@ -3116,7 +3151,7 @@ const server = http.createServer(async (req, res) => {
             version: APP_VERSION, startedAt: SERVER_STARTED_AT,
             uptimeSec: Math.round((Date.now() - SERVER_STARTED_AT) / 1000),
             node: process.version, platform: process.platform, pid: process.pid, port: PORT,
-            authEnabled: !!AUTH_PASSWORD,
+            authEnabled: authEnabled(), authFromEnv: authPasswordFromEnv(),
             sse: { clients: sse.clients.size, samplersActive: !!sse.timers },
             catalog: Object.keys(INTEGRATIONS).length,
             services: visibleServices().length,

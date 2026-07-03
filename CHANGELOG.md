@@ -7,6 +7,12 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Guided first-run setup** — a fresh install walks through the basics, an
+  optional dashboard password, and connecting the first provider, then enters
+  the dashboard. Re-runnable from Settings → General.
+- **Sign-in gate** — when a password is set (via setup or `DASHBOARD_PASSWORD`),
+  a lock screen protects the dashboard; the password is stored as a SHA-256 hash
+  in the encrypted vault. Single password, no accounts.
 - Public open-source release preparation: full documentation set, Docker &
   Compose deployment, reverse-proxy examples, CI, issue/PR templates.
 - **Demo mode** (`DEMO=1`) — a realistic, fully synthetic homelab for evaluation
