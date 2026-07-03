@@ -3,7 +3,7 @@
 # named "le". Set PUBLIC_URL to match the Host rule.
 services:
   command-center:
-    image: ghcr.io/OWNER/command-center:latest
+    image: ghcr.io/techfather-glitch/command-center:latest
     container_name: command-center
     volumes:
       - ./data:/app/data

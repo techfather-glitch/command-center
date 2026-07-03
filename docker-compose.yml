@@ -4,7 +4,7 @@
 # 3. open http://localhost:8888
 services:
   command-center:
-    image: ghcr.io/OWNER/command-center:latest
+    image: ghcr.io/techfather-glitch/command-center:latest
     # To build locally instead of pulling, comment out `image:` and use:
     # build: .
     container_name: command-center

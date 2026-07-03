@@ -48,5 +48,5 @@ The ground-up redesign into an operations console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
-[Unreleased]: https://github.com/OWNER/command-center/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/OWNER/command-center/releases/tag/v2.0.0
+[Unreleased]: https://github.com/techfather-glitch/command-center/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.0

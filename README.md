@@ -66,14 +66,14 @@ It talks to the tools you already run, normalizes them behind a common provider 
 **Try the live demo in 15 seconds** — no configuration, fully synthetic data:
 
 ```bash
-docker run --rm -p 8888:8888 -e DEMO=1 ghcr.io/OWNER/command-center:latest
+docker run --rm -p 8888:8888 -e DEMO=1 ghcr.io/techfather-glitch/command-center:latest
 # open http://localhost:8888
 ```
 
 **Run it for real** with Docker Compose:
 
 ```bash
-git clone https://github.com/OWNER/command-center.git
+git clone https://github.com/techfather-glitch/command-center.git
 cd command-center
 cp .env.example .env          # edit to taste (see INSTALL.md)
 docker compose up -d

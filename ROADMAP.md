@@ -2,7 +2,7 @@
 
 Command Center is in active development. This roadmap is directional, not a
 commitment — priorities shift with feedback. Have an opinion? Open a
-[Discussion](https://github.com/OWNER/command-center/discussions).
+[Discussion](https://github.com/techfather-glitch/command-center/discussions).
 
 ## Now (beta)
 

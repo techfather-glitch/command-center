@@ -5703,6 +5703,20 @@ document.body.setAttribute('data-density', uiPref('cc-density', 'comfortable'));
 document.body.setAttribute('data-motion', uiPref('cc-motion', 'full'));
 if (Store.settings && Store.settings.appName) document.title = Store.settings.appName;
 if ((!location.hash || location.hash === '#/' || location.hash === '#') && Store.settings && Store.settings.homeRoute && Store.settings.homeRoute !== 'dashboard') { location.replace('#/' + Store.settings.homeRoute); route = Store.settings.homeRoute; }
+// Demo mode: pre-seed history rings with believable curves so hero trend charts
+// look alive on first paint instead of filling in over the next few minutes.
+if (window.__CC_DEMO__) {
+    const seed = (n, fn) => Array.from({ length: n }, (_, i) => fn(i));
+    const N = 46;
+    History.cpu = seed(N, i => 58 + 14 * Math.sin(i / 6) + 6 * Math.sin(i / 2.3));
+    History.mem = seed(N, i => 84 + 2.5 * Math.sin(i / 9));
+    History.wanDown = seed(N, i => 6e6 + 5e6 * Math.abs(Math.sin(i / 5)) + 2e6 * Math.sin(i / 1.7));
+    History.wanUp = seed(N, i => 1.2e6 + 8e5 * Math.abs(Math.sin(i / 6 + 1)));
+    History.clients = seed(N, i => 12 + Math.round(1.5 * Math.sin(i / 8)));
+    History.ioRead = seed(N, i => 4e6 + 3e6 * Math.abs(Math.sin(i / 4)));
+    History.ioWrite = seed(N, i => 5e7 + 2e7 * Math.sin(i / 5));
+    History.mediaBitrate = seed(N, i => 55000 + 8000 * Math.sin(i / 7));
+}
 render();         // first paint with whatever we have (settings injected)
 initTileDnd();    // enable drag-to-reorder on the dashboard tile grid
 initCharts();     // hover crosshair + tooltip + synced time-range on live charts

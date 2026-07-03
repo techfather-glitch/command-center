@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: 💬 Discussions
-    url: https://github.com/OWNER/command-center/discussions
+    url: https://github.com/techfather-glitch/command-center/discussions
     about: Questions, ideas, show-and-tell and general help.
   - name: 🔒 Report a security vulnerability
-    url: https://github.com/OWNER/command-center/security/advisories/new
+    url: https://github.com/techfather-glitch/command-center/security/advisories/new
     about: Please report vulnerabilities privately — not as a public issue.

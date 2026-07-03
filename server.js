@@ -218,7 +218,10 @@ function migrateSettingsSecretsToVault() {
 
 function injectDashboardSettings(html) {
     const safeJson = JSON.stringify(redactDashboardSettings(readDashboardSettings())).replace(/</g, '\u003c');
-    const script = `<script>window.__SERVER_DASHBOARD_SETTINGS__=${safeJson};</script>`;
+    // In demo mode, tell the client so it can pre-seed history rings — otherwise
+    // hero trend charts are empty on first paint (they normally fill over minutes).
+    const demoFlag = DEMO ? 'window.__CC_DEMO__=1;' : '';
+    const script = `<script>${demoFlag}window.__SERVER_DASHBOARD_SETTINGS__=${safeJson};</script>`;
     return html.replace('</head>', `${script}\n</head>`);
 }
 
