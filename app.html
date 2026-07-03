@@ -653,7 +653,8 @@
     .ig-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
     .ig-head .svc-ico-img, .ig-head .svc-ico { width: 24px; height: 24px; border-radius: 7px; flex: 0 0 auto; }
     .ig-title { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-    .ig-head .dot { margin-left: auto; }
+    .ig-ver { font: 500 10.5px/1 ui-monospace, 'SF Mono', Menlo, monospace; color: var(--faint); background: var(--card-2); border: 1px solid var(--border); padding: 3px 6px; border-radius: 5px; flex: 0 0 auto; letter-spacing: .02em; }
+    .ig-head .dot { margin-left: 6px; }
     .ig-gauge { display: flex; justify-content: center; margin-bottom: 6px; }
     .mval.good { color: var(--green); } .mval.warn { color: var(--yellow); } .mval.bad { color: var(--red); }
     .ig-bar { margin-bottom: 10px; } .ig-bar:last-child { margin-bottom: 0; }
@@ -3236,7 +3237,8 @@ function renderWidget(def, data) {
 function igTile(def) {
     const data = Store.widgets[def.id];
     const st = !data ? '' : data.ok === false ? 'bad' : 'good';
-    return `<div class="card ig-card"><div class="ig-head">${iconImg(def.title, 24)}<span class="ig-title">${esc(def.title)}</span><span class="dot ${st || 'idle'}"></span></div><div class="ig-body">${renderWidget(def, data)}</div></div>`;
+    const ver = data && data.version ? `<span class="ig-ver" title="Reported version">v${esc(String(data.version).replace(/^v/i, ''))}</span>` : '';
+    return `<div class="card ig-card"><div class="ig-head">${iconImg(def.title, 24)}<span class="ig-title">${esc(def.title)}</span>${ver}<span class="dot ${st || 'idle'}"></span></div><div class="ig-body">${renderWidget(def, data)}</div></div>`;
 }
 function customTiles() { return (Store.settings && Array.isArray(Store.settings.customTiles)) ? Store.settings.customTiles : []; }
 function renderCustomTile(t) {
