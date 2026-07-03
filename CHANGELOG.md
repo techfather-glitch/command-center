@@ -30,6 +30,12 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with its `child_process` exec surface.
 
 ### Added
+- **Smart Home concept** — a new top-level page backed by **Home Assistant**
+  (promoted out of Automation). The enriched adapter reports lights, switches,
+  climate, locks, presence and device health from `/api/states`; the page pairs
+  an availability ring with domain stats and an honest "needs attention" lane
+  for anything unlocked, open or unavailable. Self-gates into the nav, phone
+  layout included.
 - **AI concept** — a new top-level page for local model runtimes. An **Ollama**
   provider reports the installed model library, what is loaded into memory, disk
   footprint and VRAM in use (all live from `/api/tags` + `/api/ps`, never faked);
