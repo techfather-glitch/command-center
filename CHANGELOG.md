@@ -30,6 +30,11 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with its `child_process` exec surface.
 
 ### Added
+- **AI concept** — a new top-level page for local model runtimes. An **Ollama**
+  provider reports the installed model library, what is loaded into memory, disk
+  footprint and VRAM in use (all live from `/api/tags` + `/api/ps`, never faked);
+  a bespoke inference deck surfaces it. The page self-gates into the nav only
+  once a runtime is connected, and has an intentional phone layout.
 - **Seven new providers** — Emby, Podman, Kubernetes, Incus/LXD, pfSense,
   OPNsense and Unraid, each a data-driven descriptor with health, metrics and a
   hero gauge. Brings first-class coverage to the container, virtualization,
