@@ -15,14 +15,14 @@ it with Docker (recommended), Docker Compose, or bare Node.
 
 ```bash
 # Try the demo (synthetic data, no config)
-docker run --rm -p 8888:8888 -e DEMO=1 ghcr.io/OWNER/command-center:latest
+docker run --rm -p 8888:8888 -e DEMO=1 ghcr.io/techfather-glitch/command-center:latest
 
 # Run for real (persist settings + secrets to a named volume)
 docker run -d --name command-center \
   -p 8888:8888 \
   -v cc-data:/app/data \
   -e TZ=America/New_York \
-  ghcr.io/OWNER/command-center:latest
+  ghcr.io/techfather-glitch/command-center:latest
 ```
 
 Open <http://localhost:8888> and add your first provider in **Settings →
@@ -34,7 +34,7 @@ Providers**.
 # docker-compose.yml
 services:
   command-center:
-    image: ghcr.io/OWNER/command-center:latest
+    image: ghcr.io/techfather-glitch/command-center:latest
     container_name: command-center
     ports:
       - "8888:8888"
@@ -59,7 +59,7 @@ every variable.
 Requires **Node.js 20+** (uses the built-in global `WebSocket` and `fetch`).
 
 ```bash
-git clone https://github.com/OWNER/command-center.git
+git clone https://github.com/techfather-glitch/command-center.git
 cd command-center
 node server.js         # listens on :8888
 # or: DEMO=1 node server.js   for the synthetic demo

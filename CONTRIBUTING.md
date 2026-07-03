@@ -14,7 +14,7 @@ provider is often a single object — and contributions of all sizes are welcome
 ## Development setup
 
 ```bash
-git clone https://github.com/OWNER/command-center.git
+git clone https://github.com/techfather-glitch/command-center.git
 cd command-center
 DEMO=1 node server.js     # http://localhost:8888 with synthetic data
 ```
