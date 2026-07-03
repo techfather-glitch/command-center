@@ -5585,12 +5585,16 @@ function securityLedger() {
         ['ok', 'Secrets vault', 'Encrypted at rest · AES-256-GCM · file mode 0600', 'Encrypted'],
         ['ok', 'Secrets in API responses', 'Redacted to *** · real values never returned to the browser', 'Redacted'],
         ['ok', 'Provider token proxy', 'Grafana panels render server-side · the token stays on the server', 'Server-side'],
-        ['ok', 'CSRF protection', 'Cross-origin state-changing requests are rejected and journaled', 'Enforced'],
+        ['ok', 'Content-Security-Policy', 'Strict CSP plus X-Frame-Options, nosniff, Referrer-Policy and HSTS-behind-TLS', 'Enforced'],
+        ['ok', 'CSRF protection', 'Cross-origin state-changing requests are rejected and journaled · SameSite=Strict session cookie', 'Enforced'],
         ['ok', 'Rate limiting', 'Per-IP token bucket on every route · scanners get 429', 'Enforced'],
-        ['ok', 'SSRF hardening', 'Fetch targets resolve from server config only · port probes limited to the LAN', 'Enforced'],
+        ['ok', 'SSRF hardening', 'Fetch targets resolve from server config only · port probes limited to the LAN · proxied responses size-bounded', 'Enforced'],
+        (Store.meta && Store.meta.insecureTls)
+            ? ['warn', 'Outbound TLS verification', 'Relaxed (ALLOW_INSECURE_TLS=1) — self-signed upstreams trusted. Fine on a trusted LAN; supply a CA bundle before exposing beyond it', 'Relaxed']
+            : ['ok', 'Outbound TLS verification', 'On by default — upstream certificates are verified. Self-signed homelab endpoints opt in explicitly', 'Verified'],
         ['ok', 'Audit log', 'Settings, container and auth actions are journaled — never the values', 'On'],
         (Store.meta && Store.meta.authEnabled)
-            ? ['ok', 'Authentication', 'Password gate active — every API call requires a signed-in session (HttpOnly, 12h)', 'Enforced']
+            ? ['ok', 'Authentication', 'Password gate active — scrypt-hashed, every API call requires a signed-in session (HttpOnly, 12h)', 'Enforced']
             : ['warn', 'Authentication', 'Optional password gate — set DASHBOARD_PASSWORD on the server to require a login on every API call', 'Opt-in']
     ];
     const ak = (Store.settings && Store.settings.apiKeys) || {};
@@ -5726,17 +5730,23 @@ function settingsAppearance() {
 function settingsSecurity() {
     const meta = Store.meta;
     const authOn = !!(meta && meta.authEnabled);
-    let pts = 80;   // measured capabilities: vault 20 · redaction 10 · CSRF 15 · rate-limit 10 · SSRF 15 · audit 10
+    const insecureTls = !!(meta && meta.insecureTls);
+    // measured capabilities: vault 12 · redaction 8 · token-proxy 5 · CSP+headers 12 ·
+    // CSRF+SameSite 12 · rate-limit 8 · SSRF 12 · TLS-verify 6 · audit 5 = 80 base;
+    // outbound TLS relaxed costs the 6; sign-in earns the last 20.
+    let pts = 80;
+    if (insecureTls) pts -= 6;
     if (authOn) pts += 20;
     const recs = [];
-    if (!authOn) recs.push('Require sign-in: set DASHBOARD_PASSWORD in the server environment and restart — sessions are HttpOnly, 12h.');
-    recs.push('TLS verification is relaxed for LAN self-signed endpoints (UniFi, TrueNAS) — deliberate for homelab, revisit before exposing beyond the LAN.');
+    if (!authOn) recs.push('Require sign-in: set DASHBOARD_PASSWORD in the server environment and restart — sessions are HttpOnly, scrypt-hashed, 12h.');
+    if (insecureTls) recs.push('Outbound TLS verification is relaxed (ALLOW_INSECURE_TLS=1). Fine on a trusted LAN, but supply a CA bundle (NODE_EXTRA_CA_CERTS) and drop the flag before exposing Command Center beyond it.');
+    if (!recs.length) recs.push('No outstanding hardening actions — sign-in is required and outbound TLS is verified. Keep the data directory (vault + key) private and run behind a TLS reverse proxy.');
     const audit = Store.audit;
     const auditRows = audit && audit.entries && audit.entries.length
         ? audit.entries.slice(0, 40).map(e => `<div class="audit-row"><span class="mono audit-ts">${esc((e.ts || '').replace('T', ' ').slice(0, 19))}</span><span class="audit-act">${esc(e.action || '')}</span><span class="audit-tgt" title="${esc(e.target || '')}">${esc(e.target || '')}</span><span class="chip ${e.outcome === 'ok' ? 'ok' : 'warn'}">${esc(e.outcome || '')}</span></div>`).join('')
         : `<div class="lbl" style="padding:8px 2px">${audit ? 'No journaled actions yet — entries appear when settings, containers or sign-ins change.' : 'Loading journal…'}</div>`;
     return `<div class="sec-score-row">
-        <div class="card sec-score"><span class="st-label">Security score</span><span class="sec-score-fig mono" data-state="${pts >= 90 ? '' : 'warn'}">${pts}<span class="st-unit">/100</span></span><span class="st-sub">${authOn ? 'sign-in required · all protections active' : 'all protections active · sign-in not required'}</span></div>
+        <div class="card sec-score"><span class="st-label">Security score</span><span class="sec-score-fig mono" data-state="${pts >= 90 ? '' : 'warn'}">${pts}<span class="st-unit">/100</span></span><span class="st-sub">${authOn ? 'sign-in required' : 'sign-in optional'} · ${insecureTls ? 'outbound TLS relaxed' : 'outbound TLS verified'} · vault encrypted</span></div>
         <div class="card" style="flex:1"><div class="card-title">Recommendations</div>${recs.map(r => `<div class="insp-row"><span class="insp-k" style="white-space:normal;line-height:1.45">${esc(r)}</span></div>`).join('')}</div>
     </div>
     ${securityLedger()}

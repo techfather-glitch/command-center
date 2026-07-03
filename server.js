@@ -2189,6 +2189,7 @@ const server = http.createServer(async (req, res) => {
             uptimeSec: Math.round((Date.now() - SERVER_STARTED_AT) / 1000),
             node: process.version, platform: process.platform, pid: process.pid, port: PORT,
             authEnabled: authEnabled(), authFromEnv: authPasswordFromEnv(),
+            insecureTls: ALLOW_INSECURE_TLS,
             sse: { clients: sse.clients.size, samplersActive: !!sse.timers },
             catalog: Object.keys(INTEGRATIONS).length,
             services: visibleServices().length,
