@@ -76,9 +76,6 @@
     button { font-family: inherit; cursor: pointer; }
     :focus { outline: none; }
     :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
-    
-    a { color: inherit; text-decoration: none; }
-    button { font-family: inherit; cursor: pointer; }
     /* Thin monochrome scrollbars + selection — chrome carries no accent */
     * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent; }
     ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -653,7 +650,7 @@
     .ig-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
     .ig-head .svc-ico-img, .ig-head .svc-ico { width: 24px; height: 24px; border-radius: 7px; flex: 0 0 auto; }
     .ig-title { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-    .ig-ver { font: 500 10.5px/1 ui-monospace, 'SF Mono', Menlo, monospace; color: var(--faint); background: var(--card-2); border: 1px solid var(--border); padding: 3px 6px; border-radius: 5px; flex: 0 0 auto; letter-spacing: .02em; }
+    .ig-ver { font: 500 10.5px/1 var(--mono); color: var(--t3); background: var(--s2); border: 1px solid var(--hair); padding: 3px 6px; border-radius: 5px; flex: 0 0 auto; letter-spacing: .02em; }
     .ig-head .dot { margin-left: 6px; }
     .ig-gauge { display: flex; justify-content: center; margin-bottom: 6px; }
     .mval.good { color: var(--green); } .mval.warn { color: var(--yellow); } .mval.bad { color: var(--red); }
@@ -827,7 +824,6 @@
     .card[data-state="warning"] { box-shadow: inset 2px 0 0 var(--warn); }
     .card[data-state="critical"] { box-shadow: inset 2px 0 0 var(--crit); }
     .card[data-state="offline"] { opacity: 0.9; }
-    .eyebrow { font: var(--fw-eyebrow) var(--fs-eyebrow)/var(--lh-eyebrow) var(--font); letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-3); }
 
     /* ── Status pill (4-state, icon+label, survives grayscale via dot shape) ── */
     .pill { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: var(--r-pill); font: 500 12px var(--font); }
@@ -4492,10 +4488,10 @@ PAGES.ai = function () {
     const oll = Store.widgets['ollama'];
     const ollOn = enabledIntegrations().some(d => d.id === 'ollama');
     if (!ollOn || !oll) {
-        return `<div class="ai-view">${providerStrip('ai')}<section class="lane">${connectNote('Connect a model runtime', 'The AI deck shows your local models, what is loaded into memory, and VRAM in use — live from the runtime, never faked. Connect <b>Ollama</b> in <a href="#/settings">Settings → Integrations</a>.')}</section></div>`;
+        return `<div>${providerStrip('ai')}<section class="lane">${connectNote('Connect a model runtime', 'The AI deck shows your local models, what is loaded into memory, and VRAM in use — live from the runtime, never faked. Connect <b>Ollama</b> in <a href="#/settings">Settings → Integrations</a>.')}</section></div>`;
     }
     if (oll.ok === false) {
-        return `<div class="ai-view">${providerStrip('ai')}<section class="lane">${connectNote('Ollama unreachable', 'Command Center can reach the runtime but it returned an error: <b>' + esc(errText(oll.error)) + '</b>. Check the URL and that Ollama is listening (default <span class="mono">http://localhost:11434</span>).')}</section></div>`;
+        return `<div>${providerStrip('ai')}<section class="lane">${connectNote('Ollama unreachable', 'Command Center can reach the runtime but it returned an error: <b>' + esc(errText(oll.error)) + '</b>. Check the URL and that Ollama is listening (default <span class="mono">http://localhost:11434</span>).')}</section></div>`;
     }
     const f = (rx) => { const x = (oll.fields || []).find(y => new RegExp(rx, 'i').test(y.label)); return x ? x.value : null; };
     const models = f('^Models$'), loaded = f('Loaded'), disk = f('disk'), vram = f('VRAM');
@@ -4504,9 +4500,9 @@ PAGES.ai = function () {
         ? items.map(m => `<div class="ai-model"><span class="dot ${m.state === 'good' ? 'live' : 'idle'}"></span><span class="aim-name">${esc(m.label)}</span><span class="aim-sub">${esc(m.sub || '')}</span><span class="aim-v ${m.state === 'good' ? 'loaded' : ''}">${esc(String(m.value || ''))}</span></div>`).join('')
         : `<div class="connect-note" style="padding:16px"><div class="cn-txt">No models pulled yet</div><div class="cn-sub">Pull one to get started — e.g. <span class="mono">ollama pull llama3.1</span>.</div></div>`;
     const ver = oll.version ? ' · Ollama v' + esc(String(oll.version).replace(/^v/i, '')) : '';
-    return `<div class="ai-view">
+    return `<div>
         ${providerStrip('ai')}
-        <section class="instrument ai-deck">
+        <section class="instrument">
             <div class="ai-stats">
                 ${aiStat('Models', models != null ? models : '—', 'installed')}
                 ${aiStat('Loaded', loaded != null ? loaded : '—', 'in memory', Number(loaded) > 0 ? 'live' : 'idle')}
@@ -4528,10 +4524,10 @@ PAGES.smarthome = function () {
     const ha = Store.widgets['homeassistant'];
     const haOn = enabledIntegrations().some(d => d.id === 'homeassistant');
     if (!haOn || !ha) {
-        return `<div class="ai-view">${providerStrip('smarthome')}<section class="lane">${connectNote('Connect your smart home', 'This deck shows lights, climate, locks, presence and device health — live from <b>Home Assistant</b>, never faked. Connect it in <a href="#/settings">Settings → Integrations</a> with a long-lived access token.')}</section></div>`;
+        return `<div>${providerStrip('smarthome')}<section class="lane">${connectNote('Connect your smart home', 'This deck shows lights, climate, locks, presence and device health — live from <b>Home Assistant</b>, never faked. Connect it in <a href="#/settings">Settings → Integrations</a> with a long-lived access token.')}</section></div>`;
     }
     if (ha.ok === false) {
-        return `<div class="ai-view">${providerStrip('smarthome')}<section class="lane">${connectNote('Home Assistant unreachable', 'The runtime returned an error: <b>' + esc(errText(ha.error)) + '</b>. Check the URL and that the long-lived access token is valid.')}</section></div>`;
+        return `<div>${providerStrip('smarthome')}<section class="lane">${connectNote('Home Assistant unreachable', 'The runtime returned an error: <b>' + esc(errText(ha.error)) + '</b>. Check the URL and that the long-lived access token is valid.')}</section></div>`;
     }
     const SMAP = { good: 'live', warn: 'warn', bad: 'crit' };
     const f = (rx) => (ha.fields || []).find(y => new RegExp(rx, 'i').test(y.label)) || null;
@@ -4543,11 +4539,11 @@ PAGES.smarthome = function () {
         : `<div class="connect-note" style="padding:16px"><div class="cn-txt">All clear</div><div class="cn-sub">Nothing unlocked, open or offline right now.</div></div>`;
     const ver = ha.version ? ' · HA ' + esc(String(ha.version)) : '';
     const gaugeHtml = g ? `<div class="sh-gauge">${gauge(g.max ? Math.max(0, Math.min(100, g.value / g.max * 100)) : g.value, g.label, g.value + (g.unit || ''), { sm: true })}</div>` : '';
-    return `<div class="ai-view sh-view">
+    return `<div>
         ${providerStrip('smarthome')}
-        <section class="instrument ai-deck sh-deck">
+        <section class="instrument sh-deck">
             ${gaugeHtml}
-            <div class="ai-stats sh-stats">
+            <div class="ai-stats">
                 ${cell('Lights', 'on now')}
                 ${cell('Switches', 'active')}
                 ${cell('Climate', 'zones')}
@@ -5063,7 +5059,8 @@ async function loadCtrLogs() {
    longest dash-prefix shared by ≥2 containers, else the container stands alone. */
 let appView = 'apps', appSearch = '';
 window.setAppView = function (v) { appView = v; render(); };
-window.onAppSearch = function (v) { appSearch = v; const host = document.getElementById('appGridHost'); if (host) host.innerHTML = appGridHtml(); };
+let _appSearchT = null;
+window.onAppSearch = function (v) { appSearch = v; clearTimeout(_appSearchT); _appSearchT = setTimeout(() => { const host = document.getElementById('appGridHost'); if (host) host.innerHTML = appGridHtml(); }, 130); };
 const APP_TITLE = { plex: 'Plex', emby: 'Emby', jellyfin: 'Jellyfin', immich: 'Immich', tracearr: 'Tracearr', vaultwarden: 'Vaultwarden', qbittorrent: 'qBittorrent', sabnzbd: 'SABnzbd', prowlarr: 'Prowlarr', sonarr: 'Sonarr', radarr: 'Radarr', lidarr: 'Lidarr', bazarr: 'Bazarr', jackett: 'Jackett', grafana: 'Grafana', prometheus: 'Prometheus', loki: 'Loki', promtail: 'Promtail', cadvisor: 'cAdvisor', slskd: 'slskd', dockge: 'Dockge', wizarr: 'Wizarr', system: 'System', seerr: 'Seerr', 'pia-vpn': 'PIA VPN', adguardhome: 'AdGuard Home', 'node-exporter': 'Node Exporter', droppedneedle: 'Dropped Needle' };
 function appTitle(key) {
     if (APP_TITLE[key]) return APP_TITLE[key];
@@ -5640,7 +5637,8 @@ window.setSettingsDest = function (d) {
     render();
 };
 window.setBackToList = function () { _setMobileView = 'list'; render(); };
-window.onSetSearch = function (v) { _setQ = String(v || ''); const host = document.querySelector('.set-shell'); if (host) { const q = _setQ; render(); const inp = document.getElementById('setQ'); if (inp) { inp.value = q; inp.focus(); inp.setSelectionRange(q.length, q.length); } } };
+let _setSearchT = null;
+window.onSetSearch = function (v) { _setQ = String(v || ''); clearTimeout(_setSearchT); _setSearchT = setTimeout(() => { const host = document.querySelector('.set-shell'); if (host) { const q = _setQ; render(); const inp = document.getElementById('setQ'); if (inp) { inp.value = q; inp.focus(); inp.setSelectionRange(q.length, q.length); } } }, 130); };
 async function refreshMeta() { try { Store.meta = await jget('/api/meta'); } catch (e) {} }
 async function loadAudit() { try { Store.audit = await jget('/api/audit?limit=100'); } catch (e) { Store.audit = { entries: [], error: e.message }; } if (route === 'settings' && _setDest === 'security') render(); }
 /* — proactive intelligence: real problems, with the fix one click away — */
