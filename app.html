@@ -155,10 +155,10 @@
     .kv-row .v { font-weight: 650; }
     .v.good { color: var(--green); } .v.bad { color: var(--red); } .v.warn { color: var(--yellow); }
 
-    .mini-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px,1fr)); gap: 10px; margin-bottom: 4px; }
-    .mini { background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px; }
+    .mini-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px,1fr)); gap: 10px; margin-bottom: 4px; }
+    .mini { background: var(--card-2); border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px; min-width: 0; }
     .mini .mlabel { font-size: 11.5px; color: var(--faint); }
-    .mini .mval { font-size: 18px; font-weight: 750; margin-top: 2px; }
+    .mini .mval { font-size: 18px; font-weight: 750; margin-top: 2px; overflow-wrap: anywhere; word-break: break-word; }
 
     .meter { margin: 10px 0; }
     .meter-head { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
@@ -1508,7 +1508,7 @@
     .wan-legend .rx { color: var(--live); } .wan-legend .tx { color: var(--info); }
     .net-stage { margin-bottom: 12px; }
     .instrument.topo { padding: 0; }
-    .topo-wrap { overflow: auto; padding: 10px 12px 14px; }
+    .topo-wrap { overflow: auto; padding: 10px 12px 14px; max-width: 100%; }
     .topo-canvas { width: 100%; height: auto; display: block; min-width: 620px; }
     .edge { fill: none; stroke: var(--hair-2); }
     .edge.live { stroke: var(--live); }
@@ -1838,7 +1838,7 @@
        RESPONSIVE LAYER — appended last so it always wins the cascade.
        Desktop (1280–1919) is the reference and is deliberately untouched here.
        ═══════════════════════════════════════════════════════════════════════ */
-    .topo-scroll { overflow-x: auto; }                     /* wide SVG scrolls inside its instrument, never the page */
+    .topo-scroll { overflow-x: auto; max-width: 100%; }    /* wide SVG scrolls inside its instrument, never the page */
     .topo-collapsed { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
     .topo-collapsed .lbl { flex: 1; }
     .uw-rail { display: none; }
@@ -3285,7 +3285,7 @@ function renderWidget(def, data) {
     if (data.ok === false) return `<div class="ig-err">⚠ ${esc(data.error || 'unavailable')}</div>`;
     const p = [];
     if (data.gauge) { const g = data.gauge; const pct = g.max ? Math.max(0, Math.min(100, g.value / g.max * 100)) : g.value; p.push(`<div class="ig-gauge">${gauge(pct, g.label, g.value + (g.unit || ''), { sm: true })}</div>`); }
-    if (Array.isArray(data.fields) && data.fields.length) p.push(`<div class="mini-stats">${data.fields.map(f => `<div class="mini"><div class="mlabel">${esc(f.label)}</div><div class="mval ${f.state || ''}" style="font-size:18px">${fmtWidgetField(f)}</div></div>`).join('')}</div>`);
+    if (Array.isArray(data.fields) && data.fields.length) p.push(`<div class="mini-stats">${data.fields.map(f => { const L = (f.value == null ? '' : String(f.value)).length; const fs = L > 8 ? 12 : L > 5 ? 14 : 18; return `<div class="mini"><div class="mlabel">${esc(f.label)}</div><div class="mval ${f.state || ''}" style="font-size:${fs}px">${fmtWidgetField(f)}</div></div>`; }).join('')}</div>`);
     if (Array.isArray(data.bars) && data.bars.length) p.push(`<div style="margin-top:10px">${data.bars.map(b => { const pct = b.max ? Math.round(b.value / b.max * 100) : Math.round(b.value); return `<div class="ig-bar"><div class="ig-bar-h"><span>${esc(b.label)}</span><span>${pct}${b.unit || '%'}</span></div><div class="meter-track" style="height:8px"><div class="meter-bar ${b.state || usageClass(pct)}" style="width:${Math.min(100, pct)}%"></div></div></div>`; }).join('')}</div>`);
     if (Array.isArray(data.series) && data.series.length > 1) p.push(`<div class="spark-wrap">${sparkline(data.series, { w: 280, h: 40, grad: ['#2dd4bf', '#a78bfa'] })}</div>`);
     if (Array.isArray(data.items) && data.items.length) p.push(`<div class="ig-items">${data.items.slice(0, 6).map(it => `<div class="ig-item"><span class="dot ${it.state || 'idle'}"></span><span class="ig-item-l">${esc(it.label)}</span>${it.sub ? `<span class="ig-item-s">${esc(it.sub)}</span>` : ''}${it.value != null ? `<span class="ig-item-v sig-${it.state === 'good' ? 'good' : it.state === 'bad' ? 'low' : 'ok'}">${esc(String(it.value))}</span>` : ''}</div>`).join('')}</div>`);
