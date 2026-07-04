@@ -20,6 +20,20 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Bounded proxied upstream response sizes.
 
 ### Fixed
+- **Tablet layout collapse** — every page rendered as a ~60px sliver between
+  768–880px because the tablet breakpoint restored the two-column grid tracks
+  but not the area map; the two now stay in sync.
+- **Credential encoding** — qBittorrent and Synology logins percent-encode the
+  username/password, so passwords containing `&`, `+`, `%` or `#` no longer
+  silently fail authentication.
+- **Keyboard accessibility** — service rows, network/storage/integration
+  expanders, and Dropped Needle results are now focusable and Enter/Space
+  activatable; the command palette traps focus and restores it to the opener on
+  close (WCAG 2.1.1).
+- **Docker daemon load** — `/api/docker/containers` is cached (single-flight,
+  12s), so multiple tabs no longer fan out a stats call per container every poll.
+- Emby no longer reports a healthy idle server as degraded; Settings/Applications
+  search inputs are debounced.
 - Self-hosted icon proxy now accepts SVGs that ship an XML prolog / doctype
   before `<svg>` (e.g. OPNsense), which were previously rejected and fell back to
   monogram placeholders.
