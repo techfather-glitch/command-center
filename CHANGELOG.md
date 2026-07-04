@@ -20,6 +20,10 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Bounded proxied upstream response sizes.
 
 ### Fixed
+- **Stored XSS (server-injected settings)** — the inline `<script>` that seeds
+  client settings escaped `<` with a no-op, so a stored settings string could
+  break out and inject HTML. The JSON is now `\uXXXX`-escaped (`<>&`, line
+  separators) before embedding; covered by a regression test.
 - **Tablet layout collapse** — every page rendered as a ~60px sliver between
   768–880px because the tablet breakpoint restored the two-column grid tracks
   but not the area map; the two now stay in sync.
