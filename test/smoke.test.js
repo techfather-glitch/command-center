@@ -20,7 +20,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const cc = require('../server.js');
 
-const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript } = cc;
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget } = cc;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
@@ -296,6 +296,34 @@ test('escapeJsonForScript neutralizes a </script> breakout and round-trips', () 
   assert.ok(!safe.includes('<') && !safe.includes('>') && !safe.includes('&'), 'no raw < > & survive');
   // and it must still parse back to the exact original object
   assert.deepEqual(JSON.parse(safe), payload);
+});
+
+// ── 7c. SSRF egress guard ─────────────────────────────────────────────────
+test('ipZone classifies loopback / link-local / metadata / private / public', () => {
+  assert.equal(ipZone('127.0.0.1'), 'loopback');
+  assert.equal(ipZone('::1'), 'loopback');
+  assert.equal(ipZone('169.254.169.254'), 'linklocal');       // the classic cloud metadata IP
+  assert.equal(ipZone('::ffff:169.254.169.254'), 'linklocal'); // IPv4-mapped bypass
+  assert.equal(ipZone('100.100.100.200'), 'metadata');        // Alibaba
+  assert.equal(ipZone('0.0.0.0'), 'unspecified');
+  assert.equal(ipZone('10.0.0.5'), 'private');
+  assert.equal(ipZone('192.168.1.10'), 'private');
+  assert.equal(ipZone('172.16.0.1'), 'private');
+  assert.equal(ipZone('8.8.8.8'), 'public');
+});
+
+test('assertFetchTarget blocks loopback/metadata for the tile proxy but allows LAN', async () => {
+  // custom-tile proxy posture: no loopback, LAN allowed
+  const opt = { allowLoopback: false, allowPrivate: true };
+  await assert.rejects(assertFetchTarget('http://127.0.0.1:2375/containers/json', opt), /loopback/);
+  await assert.rejects(assertFetchTarget('http://169.254.169.254/latest/meta-data/', opt), /linklocal/);
+  await assert.rejects(assertFetchTarget('http://[::ffff:169.254.169.254]/', opt), /linklocal/);
+  await assert.rejects(assertFetchTarget('http://0.0.0.0/', opt), /unspecified/);
+  await assert.rejects(assertFetchTarget('ftp://192.168.1.10/', opt), /http/);
+  await assert.doesNotReject(assertFetchTarget('http://192.168.1.10:9090/metrics', opt), 'LAN JSON API is allowed');
+  // provider posture: loopback allowed (local Prometheus etc.), metadata still blocked
+  await assert.doesNotReject(assertFetchTarget('http://127.0.0.1:9090/', { allowLoopback: true }));
+  await assert.rejects(assertFetchTarget('http://169.254.169.254/', { allowLoopback: true }), /linklocal/);
 });
 
 // ── 7. secret redaction sentinel ──────────────────────────────────────────

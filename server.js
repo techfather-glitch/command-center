@@ -228,7 +228,10 @@ function injectDashboardSettings(html) {
     // hero trend charts are empty on first paint (they normally fill over minutes).
     const demoFlag = DEMO ? 'window.__CC_DEMO__=1;' : '';
     const script = `<script>${demoFlag}window.__SERVER_DASHBOARD_SETTINGS__=${safeJson};</script>`;
-    return html.replace('</head>', `${script}\n</head>`);
+    // Function replacer, NOT a string: a string replacement expands $-patterns
+    // ($&, $`, $', $$), so a literal $ in the settings JSON would splice raw head
+    // HTML into the payload and break it. A function return is used verbatim.
+    return html.replace('</head>', () => `${script}\n</head>`);
 }
 
 function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cookies = '' } = {}) {
@@ -1456,10 +1459,64 @@ function igResolveAuth(a, cred) {
     if (a.headers) Object.assign(out.headers, a.headers);
     return out;
 }
+// ── SSRF egress guard ──────────────────────────────────────────────────────
+// Classify an IP literal into a trust zone (IPv4 + the IPv6 cases that matter).
+function ipZone(ip) {
+    ip = String(ip || '');
+    const m = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);   // IPv4-mapped IPv6 (dotted) → the IPv4
+    if (m) ip = m[1];
+    const mh = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip);   // IPv4-mapped IPv6 (hex, as Node normalizes it)
+    if (mh) { const a = parseInt(mh[1], 16), b = parseInt(mh[2], 16); ip = [(a >> 8) & 255, a & 255, (b >> 8) & 255, b & 255].join('.'); }
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) {
+        const o = ip.split('.').map(Number);
+        if (o.some(x => x > 255)) return 'invalid';
+        if (o[0] === 127) return 'loopback';
+        if (o[0] === 0) return 'unspecified';
+        if (o[0] === 169 && o[1] === 254) return 'linklocal';                                // incl. 169.254.169.254 cloud metadata
+        if (o[0] === 100 && o[1] === 100 && o[2] === 100 && o[3] === 200) return 'metadata';  // Alibaba metadata
+        if (o[0] === 10) return 'private';
+        if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return 'private';
+        if (o[0] === 192 && o[1] === 168) return 'private';
+        return 'public';
+    }
+    const low = ip.toLowerCase();
+    if (low === '::1') return 'loopback';
+    if (low === '::' || low === '') return 'unspecified';
+    if (low.startsWith('fe80')) return 'linklocal';
+    if (low.startsWith('fc') || low.startsWith('fd')) return 'private';                       // ULA
+    return 'public';
+}
+// A homelab dashboard legitimately reaches loopback + LAN, so private ranges are NOT
+// blanket-blocked — but link-local (cloud metadata) and unspecified are never valid, and
+// the custom-tile proxy additionally must not reach loopback (Docker socket / the
+// dashboard's own admin API). Resolving the host first defeats decimal/hex/IPv4-mapped
+// and DNS-name bypasses. Throws on a blocked target.
+async function assertFetchTarget(rawUrl, opt) {
+    opt = opt || {};
+    const allowLoopback = !!opt.allowLoopback;
+    const allowPrivate = opt.allowPrivate !== false;
+    let u; try { u = new URL(rawUrl); } catch (e) { throw new Error('bad url'); }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('only http/https allowed');
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    let ips;
+    if (net.isIP(host)) ips = [host];
+    else { try { ips = (await dns.lookup(host, { all: true })).map(a => a.address); } catch (e) { throw new Error('cannot resolve host'); } }
+    if (!ips.length) throw new Error('host did not resolve');
+    for (const ip of ips) {
+        const z = ipZone(ip);
+        if (z === 'metadata' || z === 'linklocal' || z === 'unspecified' || z === 'invalid') throw new Error('blocked target: ' + z);
+        if (z === 'loopback' && !allowLoopback) throw new Error('blocked target: loopback');
+        if (z === 'private' && !allowPrivate) throw new Error('blocked target: private');
+    }
+}
 function igFetch(rawUrl, opt) {
     opt = opt || {};
     return new Promise((resolve) => {
         let u; try { u = new URL(rawUrl); } catch (e) { return resolve({ status: 0, error: 'bad url' }); }
+        // Cheap literal-IP guard on every proxied fetch — cloud-metadata / link-local /
+        // unspecified targets are never a legitimate provider (no DNS cost for IP hosts).
+        const _h = u.hostname.replace(/^\[|\]$/g, '');
+        if (net.isIP(_h)) { const z = ipZone(_h); if (z === 'linklocal' || z === 'metadata' || z === 'unspecified' || z === 'invalid') return resolve({ status: 0, error: 'blocked target' }); }
         const lib = u.protocol === 'https:' ? require('https') : require('http');
         const opts = { method: opt.method || 'GET', headers: Object.assign({ 'User-Agent': 'dashboard-server/1.0', 'Accept': opt.accept === 'prometheus' ? 'text/plain' : 'application/json' }, opt.headers || {}), timeout: opt.timeout || 12000 };
         if (u.protocol === 'https:' && opt.insecure) opts.rejectUnauthorized = false;
@@ -2371,7 +2428,7 @@ const server = http.createServer(async (req, res) => {
             const ok = (r.status >= 200 && r.status < 300) || r.status === 304;
             // Bust the container-list cache so the client's ~1s confirmation
             // refetch reflects the new state instead of a stale pre-action body.
-            if (ok) { _dockerList.body = null; _dockerList.at = 0; }
+            if (ok) { _dockerList.body = null; _dockerList.at = 0; _dockerList.inflight = null; _dockerList.host = ''; }
             auditLog(req, 'docker.' + action, id, ok ? 'ok' : 'failed');
             res.writeHead(ok ? 200 : 502, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok, status: r.status, error: ok ? undefined : ((r.body && r.body.message) || ('Docker HTTP ' + r.status)) }));
@@ -2675,9 +2732,11 @@ const server = http.createServer(async (req, res) => {
             const tiles = Array.isArray(settings.customTiles) ? settings.customTiles : [];
             const tile = tiles.find(t => t.id === (payload && payload.id));
             if (!tile || tile.type !== 'customapi') { jsonRes(res, 404, { ok: false, error: 'unknown tile' }); return; }
-            let u; try { u = new URL(tile.url); } catch (e) { jsonRes(res, 400, { ok: false, error: 'bad URL' }); return; }
-            if (!/^https?:$/.test(u.protocol)) { jsonRes(res, 400, { ok: false, error: 'only http/https URLs allowed' }); return; }
-            if (/^169\.254\./.test(u.hostname) || u.hostname === 'metadata.google.internal') { jsonRes(res, 400, { ok: false, error: 'blocked host' }); return; }
+            // Custom-tile proxy: resolve + reject loopback (Docker socket / own admin
+            // API), link-local/cloud-metadata and unspecified. LAN (private) is allowed —
+            // hitting a JSON endpoint on the network is the feature.
+            try { await assertFetchTarget(tile.url, { allowLoopback: false, allowPrivate: true }); }
+            catch (e) { jsonRes(res, 400, { ok: false, error: 'blocked host: ' + e.message }); return; }
             const headers = {};
             // Header value lives in the encrypted vault (settings only ever hold the
             // sentinel); tolerate a not-yet-migrated plaintext value as fallback.
@@ -2944,10 +3003,13 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ status: 'offline', error: 'Invalid host or port' }));
             return;
         }
-        // SECURITY: this is a caller-driven port probe — restrict it to the homelab
-        // (private/loopback ranges + plain hostnames) so it can't scan the internet.
-        const isPrivateTarget = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|localhost$|[a-zA-Z][a-zA-Z0-9-]*(\.(local|lan|home|internal))?$)/.test(host);
-        if (!isPrivateTarget) {
+        // SECURITY: this is a caller-driven port probe — restrict it to the homelab.
+        // Resolve the host and require every address to be loopback/LAN; a raw-string
+        // pattern let bare labels (via the DNS search domain) and 10.evil.com through.
+        let probeIps = [];
+        try { const h = host.replace(/^\[|\]$/g, ''); probeIps = net.isIP(h) ? [h] : (await dns.lookup(h, { all: true })).map(a => a.address); } catch (e) { probeIps = []; }
+        const zoneOk = probeIps.length > 0 && probeIps.every(ip => ipZone(ip) === 'loopback' || ipZone(ip) === 'private');
+        if (!zoneOk) {
             auditLog(req, 'portcheck.reject', host + ':' + port, 'blocked');
             res.writeHead(400, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ status: 'offline', error: 'Only private/LAN hosts can be probed' }));
@@ -2999,4 +3061,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget };
