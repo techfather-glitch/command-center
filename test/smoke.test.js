@@ -20,7 +20,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const cc = require('../server.js');
 
-const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL } = cc;
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript } = cc;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
@@ -284,6 +284,18 @@ test('HSTS is present only behind TLS, absent on plain HTTP', () => {
   assert.equal(plain['Strict-Transport-Security'], undefined);
   const tls = securityHeaders({ headers: { 'x-forwarded-proto': 'https' }, socket: {} });
   assert.match(tls['Strict-Transport-Security'], /max-age=/);
+});
+
+// ── 7b. inline-script JSON escaping (stored-XSS guard) ────────────────────
+test('escapeJsonForScript neutralizes a </script> breakout and round-trips', () => {
+  const payload = { name: '</script><img src=x onerror=alert(document.cookie)>' };
+  const safe = escapeJsonForScript(JSON.stringify(payload));
+  // the escaped output must NOT contain a literal script-closer or tag open
+  assert.doesNotMatch(safe, /<\/script/i, 'must not emit a literal </script');
+  assert.doesNotMatch(safe, /<img/i, 'must not emit a literal <img');
+  assert.ok(!safe.includes('<') && !safe.includes('>') && !safe.includes('&'), 'no raw < > & survive');
+  // and it must still parse back to the exact original object
+  assert.deepEqual(JSON.parse(safe), payload);
 });
 
 // ── 7. secret redaction sentinel ──────────────────────────────────────────

@@ -212,8 +212,18 @@ function migrateSettingsSecretsToVault() {
     if (JSON.stringify(nextVault) !== JSON.stringify(vault)) writeSecretVault(nextVault);
 }
 
+// Escape a JSON payload for safe embedding inside an inline <script>. JSON.stringify
+// does NOT escape <, >, & or the U+2028/2029 line separators, so a stored settings
+// value like a script-closing sequence would break out and inject HTML. Rewriting
+// those characters as uXXXX escapes keeps the payload inert to the HTML parser while
+// it still parses byte-identically as JavaScript. (fromCharCode(92) is a backslash.)
+function escapeJsonForScript(s) {
+    const BS = String.fromCharCode(92);
+    const re = new RegExp('[<>&' + String.fromCharCode(0x2028) + String.fromCharCode(0x2029) + ']', 'g');
+    return String(s).replace(re, c => BS + 'u' + ('000' + c.charCodeAt(0).toString(16)).slice(-4));
+}
 function injectDashboardSettings(html) {
-    const safeJson = JSON.stringify(redactDashboardSettings(readDashboardSettings())).replace(/</g, '\u003c');
+    const safeJson = escapeJsonForScript(JSON.stringify(redactDashboardSettings(readDashboardSettings())));
     // In demo mode, tell the client so it can pre-seed history rings — otherwise
     // hero trend charts are empty on first paint (they normally fill over minutes).
     const demoFlag = DEMO ? 'window.__CC_DEMO__=1;' : '';
@@ -1588,7 +1598,7 @@ const INTEGRATIONS = {
     plex: { id: 'plex', title: 'Plex', category: 'media', icon: 'plex', defaultUrl: 'http://192.168.1.10:32400', auth: { type: 'header', name: 'X-Plex-Token', field: 'token' }, poll: 20, testRequest: 'sessions', requests: [{ id: 'sessions', path: '/status/sessions' }], normalize: (r) => { const mc = r.sessions && r.sessions.MediaContainer; const n = (mc && mc.size) || 0; const items = ((mc && mc.Metadata) || []).slice(0, 5).map(m => ({ label: m.title || m.grandparentTitle || 'stream', sub: (m.User && m.User.title) || '', state: 'good' })); return { fields: [{ label: 'Streams', value: n, kind: 'stat', state: n ? 'good' : 'idle' }], items }; } },
     jellyfin: { id: 'jellyfin', title: 'Jellyfin', category: 'media', icon: 'jellyfin', defaultUrl: 'http://192.168.1.10:8096', auth: { type: 'header', name: 'X-Emby-Token', field: 'key' }, poll: 20, testRequest: 'sessions', requests: [{ id: 'sessions', path: '/Sessions' }, { id: 'counts', path: '/Items/Counts', optional: true }], normalize: (r) => { const ses = Array.isArray(r.sessions) ? r.sessions.filter(s => s.NowPlayingItem) : []; const c = r.counts || {}; return { fields: [{ label: 'Streams', value: ses.length, kind: 'stat', state: ses.length ? 'good' : 'idle' }, { label: 'Movies', value: c.MovieCount || 0, kind: 'stat' }, { label: 'Episodes', value: c.EpisodeCount || 0, kind: 'stat' }], items: ses.slice(0, 5).map(s => ({ label: (s.NowPlayingItem && s.NowPlayingItem.Name) || 'stream', sub: s.UserName || '', state: 'good' })) }; } },
     overseerr: { id: 'overseerr', title: 'Overseerr / Jellyseerr', category: 'media', icon: 'overseerr', defaultUrl: 'http://192.168.1.10:5055', auth: { type: 'header', name: 'X-Api-Key', field: 'key' }, poll: 60, testRequest: 'count', requests: [{ id: 'count', path: '/api/v1/request/count' }], normalize: (r) => { const c = r.count || {}; return { fields: [{ label: 'Pending', value: c.pending || 0, kind: 'stat', state: (c.pending || 0) > 0 ? 'warn' : 'good' }, { label: 'Approved', value: c.approved || 0, kind: 'stat' }, { label: 'Total', value: c.total || 0, kind: 'stat' }] }; } },
-    immich: { id: 'immich', title: 'Immich', category: 'media', icon: 'immich', defaultUrl: 'http://192.168.1.10:2283', auth: { type: 'header', name: 'x-api-key', field: 'key' }, poll: 300, testRequest: 'stats', requests: [{ id: 'stats', path: '/api/server-info/statistics' }], normalize: (r) => { const s = r.stats || {}; return { fields: [{ label: 'Photos', value: s.photos || 0, kind: 'stat' }, { label: 'Videos', value: s.videos || 0, kind: 'stat' }, { label: 'Usage', value: s.usage || 0, kind: 'bytes' }] }; } },
+    immich: { id: 'immich', title: 'Immich', category: 'media', icon: 'immich', defaultUrl: 'http://192.168.1.10:2283', auth: { type: 'header', name: 'x-api-key', field: 'key' }, poll: 300, testRequest: 'stats', requests: [{ id: 'stats', path: '/api/server/statistics' }], normalize: (r) => { const s = r.stats || {}; return { fields: [{ label: 'Photos', value: s.photos || 0, kind: 'stat' }, { label: 'Videos', value: s.videos || 0, kind: 'stat' }, { label: 'Usage', value: s.usage || 0, kind: 'bytes' }] }; } },
     tailscale: { id: 'tailscale', title: 'Tailscale', category: 'network', icon: 'tailscale', defaultUrl: 'https://api.tailscale.com', auth: { type: 'bearer', field: 'token' }, poll: 300, testRequest: 'devices', requests: [{ id: 'devices', path: '/api/v2/tailnet/-/devices' }], normalize: (r) => { const d = (r.devices && r.devices.devices) || []; const now = Date.now(); const online = d.filter(x => x.lastSeen && (now - new Date(x.lastSeen).getTime()) < 300000).length; return { fields: [{ label: 'Devices', value: d.length, kind: 'stat' }, { label: 'Online', value: online, kind: 'stat', state: 'good' }] }; } },
     gotify: { id: 'gotify', title: 'Gotify', category: 'notifications', icon: 'gotify', defaultUrl: 'http://192.168.1.10:8080', auth: { type: 'header', name: 'X-Gotify-Key', field: 'key' }, poll: 30, testRequest: 'messages', requests: [{ id: 'messages', path: '/message?limit=10' }], normalize: (r) => { const m = (r.messages && r.messages.messages) || []; return { fields: [{ label: 'Messages', value: (r.messages && r.messages.paging && r.messages.paging.size) || m.length, kind: 'stat' }], items: m.slice(0, 5).map(x => ({ label: x.title || 'message', sub: (x.message || '').slice(0, 48), state: (x.priority || 0) >= 6 ? 'bad' : (x.priority || 0) >= 3 ? 'warn' : 'idle' })) }; } },
     healthchecks: { id: 'healthchecks', title: 'Healthchecks', category: 'monitoring', icon: 'healthchecks', defaultUrl: 'https://healthchecks.io', auth: { type: 'header', name: 'X-Api-Key', field: 'key' }, poll: 60, testRequest: 'checks', requests: [{ id: 'checks', path: '/api/v3/checks/' }], normalize: (r) => { const c = (r.checks && r.checks.checks) || []; const down = c.filter(x => x.status === 'down').length; const grace = c.filter(x => x.status === 'grace').length; return { fields: [{ label: 'Checks', value: c.length, kind: 'stat' }, { label: 'Down', value: down, kind: 'stat', state: down ? 'bad' : 'good' }, { label: 'Grace', value: grace, kind: 'stat', state: grace ? 'warn' : 'good' }] }; } },
@@ -2359,6 +2369,9 @@ const server = http.createServer(async (req, res) => {
         try {
             const r = await dockerRequest('POST', `/containers/${encodeURIComponent(id)}/${action}`, host);
             const ok = (r.status >= 200 && r.status < 300) || r.status === 304;
+            // Bust the container-list cache so the client's ~1s confirmation
+            // refetch reflects the new state instead of a stale pre-action body.
+            if (ok) { _dockerList.body = null; _dockerList.at = 0; }
             auditLog(req, 'docker.' + action, id, ok ? 'ok' : 'failed');
             res.writeHead(ok ? 200 : 502, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok, status: r.status, error: ok ? undefined : ((r.body && r.body.message) || ('Docker HTTP ' + r.status)) }));
@@ -2986,4 +2999,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript };
