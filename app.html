@@ -2776,7 +2776,7 @@ function attentionServices() { return Store.services.filter(svcAttention); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /* ---------- history + chart helpers ---------- */
-const History = { wanDown: [], wanUp: [], clients: [], cpu: [], mem: [], mediaBitrate: [], ioRead: [], ioWrite: [] };
+const History = { wanDown: [], wanDownLive: [], wanUp: [], clients: [], cpu: [], mem: [], mediaBitrate: [], ioRead: [], ioWrite: [] };
 const clientHist = {};   // mac -> recent total-throughput samples, for per-client History sparklines
 const svcHist = {};      // service name -> recent {ok:2|1|0, ms} health samples
 /* One shared ring size so every history window is the same and the labels stay honest:
@@ -2791,6 +2791,9 @@ function pushHistory() {
     if (Array.isArray(w.history) && w.history.length > 1) History.wanDown = w.history.slice(-90);
     else _push(History.wanDown, Number(w.rate != null ? w.rate : (w.rxRate != null ? w.rxRate : 0)) || 0);
     _push(History.wanUp, Number(w.txRate != null ? w.txRate : (w.uploadMbps != null ? w.uploadMbps : 0)) || 0);
+    // A per-poll down ring so the rx/tx mirror shares ONE cadence with wanUp (the
+    // server wanDown ring above is deduped, so it can't be time-aligned with tx).
+    _push(History.wanDownLive, Number(w.rate != null ? w.rate : (w.rxRate != null ? w.rxRate : 0)) || 0);
     _push(History.clients, Number((u.clients && (u.clients.total != null ? u.clients.total : u.clients.count)) || (Array.isArray(u.clients) ? u.clients.length : 0)) || 0);
     _push(History.cpu, Number(h.cpuPct != null ? h.cpuPct : h.cpu) || 0);
     _push(History.mem, Number(h.memPct != null ? h.memPct : h.mem) || 0);
@@ -4035,7 +4038,7 @@ function svcNavRow(s) {
 }
 /* — detail header + buttons — */
 function detBtnOpen(s) { return s.url ? `<a class="det-btn primary" href="${esc(s.url)}" target="_blank" rel="noopener">${opsIco('open')}Open</a>` : ''; }
-function detBtnRestart(s) { const c = containerList().find(c => (prettyCtr(c.name) || '').toLowerCase() === s.name.toLowerCase() || (c.name || '').toLowerCase() === s.name.toLowerCase()); if (dockerControl() && c && c.id) return `<button class="det-btn" onclick="ctrAction('restart','${esc(c.id)}')">${opsIco('restart')}Restart</button>`; return ''; }
+function detBtnRestart(s) { const c = containerList().find(c => (prettyCtr(c.name) || '').toLowerCase() === s.name.toLowerCase() || (c.name || '').toLowerCase() === s.name.toLowerCase()); if (dockerControl() && c && c.id) return `<button class="det-btn" onclick="ctrAction('restart',${esc(jstr(c.id))})">${opsIco('restart')}Restart</button>`; return ''; }
 function detHead(s, actions) {
     const st = svcState(s), chip = `<span class="status-chip" data-state="${st === 'healthy' ? 'ok' : st === 'warning' ? 'warn' : 'crit'}"><i class="dot"></i>${svcOnline(s) ? (svcSlow(s) ? 'Slow' : 'Healthy') : (s.status === 'offline' ? 'Down' : 'Error')}</span>`;
     const lat = svcOnline(s) ? (Math.round(s.responseTime || 0) + 'ms') : '';
@@ -4125,7 +4128,7 @@ function opsInsights(s) {
     const acts = _acts.filter(a => a.name === s.name).slice(0, 6);
     const errRows = acts.length ? acts.map(a => `<div class="insight-row"><span class="dot ${a.state === 'healthy' ? 'ok' : a.state === 'warning' ? 'warn' : 'crit'}"></span><span>${esc(a.msg.replace(/<[^>]+>/g, ''))}</span><span class="ir-ts">${fmtAgo(a.ts)}</span></div>`).join('') : `<div class="insight-row"><span class="dot ok"></span><span>No incidents this session</span></div>`;
     const c = containerList().find(c => (prettyCtr(c.name) || '').toLowerCase() === s.name.toLowerCase());
-    const logsBtn = (dockerControl() && c && c.id) ? `<button class="det-btn" onclick="ctrOpenLogs('${esc(c.id)}','${esc(s.name)}');location.hash='#/containers'">${opsIco('activity')}View logs</button>` : '';
+    const logsBtn = (dockerControl() && c && c.id) ? `<button class="det-btn" onclick="ctrOpenLogs(${esc(jstr(c.id))},${esc(jstr(s.name))});location.hash='#/containers'">${opsIco('activity')}View logs</button>` : '';
     const actionsHtml = [detBtnOpen(s), detBtnRestart(s), logsBtn, `<a class="det-btn" href="#/settings">${opsIco('gear')}Configure</a>`].filter(Boolean).join('');
     const related = (Store.services || []).filter(x => x.name !== s.name && opsGroup(x) === opsGroup(s)).slice(0, 6);
     const relHtml = related.length ? `<div class="rel-wrap">${related.map(r => `<span class="rel-chip" data-svc="${esc(r.name)}"><span class="dot ${svcState(r) === 'healthy' ? 'ok' : svcState(r) === 'warning' ? 'warn' : 'crit'}"></span>${esc(r.name)}</span>`).join('')}</div>` : `<div class="lbl">None in this group.</div>`;
@@ -4865,7 +4868,7 @@ PAGES.networking = function () {
             <hr class="hair">
             <div class="wan-body">
                 <div class="wan-ident"><div class="wan-isp">${esc(w.isp || 'Internet')}</div><div class="wan-ip">${esc(w.ip || '')}</div><div class="wan-hero">${w.rate ? thruParts(w.rate)[0] : '—'}<span class="wan-unit">${w.rate ? ' ' + thruParts(w.rate)[1] : ''}</span></div><div class="wan-sub"><span class="dot ${wanState}"></span>${w.up === false ? 'down' : w.up ? 'up' : 'unknown'}${w.latency != null ? ' · ' + Math.round(w.latency) + ' ms' : ''}${w.availability != null ? ' · ' + w.availability + '% avail' : ''}</div></div>
-                <div class="wan-mirror-wrap"><div class="wan-legend"><span class="rx">↓ rx</span><span class="tx">↑ tx</span></div>${wanMirror(History.wanDown, History.wanUp)}</div>
+                <div class="wan-mirror-wrap"><div class="wan-legend"><span class="rx">↓ rx</span><span class="tx">↑ tx</span></div>${wanMirror(History.wanDownLive, History.wanUp)}</div>
             </div>
         </section>
         <div class="net-stage">
@@ -5027,8 +5030,8 @@ function ctrRow(c, ctl) {
     const mem = c.mem != null ? `<div class="ctr-mem"><span class="mbar"><i style="width:${memPct != null ? memPct : 30}%"></i></span><span class="mv">${fmtBytes(c.mem)}</span></div>` : `<div class="ctr-mem"></div>`;
     const act = (k, title, attrs) => `<button class="ctr-act" title="${title}" ${attrs}>${ctrIco(k)}</button>`;
     const acts = ctl
-        ? act('play', 'Start', `${c.running ? 'disabled' : ''} onclick="ctrAction('start','${esc(c.id || '')}')"`) + act('restart', 'Restart', `onclick="ctrAction('restart','${esc(c.id || '')}')"`) + act('stop', 'Stop', `${!c.running ? 'disabled' : ''} onclick="ctrAction('stop','${esc(c.id || '')}')"`) + act('logs', 'Logs', `onclick="ctrOpenLogs('${esc(c.id || '')}','${esc(c.label)}')"`)
-        : act('logs', 'Logs · connect a Docker host to control', `onclick="ctrOpenLogs('${esc(c.id || '')}','${esc(c.label)}')"`);
+        ? act('play', 'Start', `${c.running ? 'disabled' : ''} onclick="ctrAction('start',${esc(jstr(c.id || ''))})"`) + act('restart', 'Restart', `onclick="ctrAction('restart',${esc(jstr(c.id || ''))})"`) + act('stop', 'Stop', `${!c.running ? 'disabled' : ''} onclick="ctrAction('stop',${esc(jstr(c.id || ''))})"`) + act('logs', 'Logs', `onclick="ctrOpenLogs(${esc(jstr(c.id || ''))},${esc(jstr(c.label))})"`)
+        : act('logs', 'Logs · connect a Docker host to control', `onclick="ctrOpenLogs(${esc(jstr(c.id || ''))},${esc(jstr(c.label))})"`);
     return `<div class="ctr-row"><span class="dot ${dot}"></span>${iconImg(c.label, 20)}<span class="ctr-name"><b>${esc(c.label)}</b><i class="ctr-img" title="${esc(c.image || '')}">${esc(c.image || '—')}</i></span><span class="ctr-status">${esc(statusStr)}</span>${mem}<div class="ctr-actions">${acts}</div></div>`;
 }
 function ctrCardsHtml() {
