@@ -843,6 +843,11 @@ async function queryNetworkTotal(endpoint) {
    counters across requests, so every tab gets a rate without warming its own
    delta window. */
 const _ctrSummary = { body: null, at: 0, inflight: null };
+// /api/docker/containers single-flight TTL cache. Without it, each open tab
+// re-fans-out one stats?stream=false request per running container every 20s
+// poll, hammering the Docker daemon (N tabs × M containers). Keyed on host so a
+// reconfigure bypasses stale data.
+const _dockerList = { body: null, at: 0, inflight: null, host: '' };
 const _ctrCpuPrev = Object.create(null);   // name → { c: cpu counter (s), t: sample time (ms) }
 
 function fetchTextUrl(url, timeoutMs = 10000) {
@@ -2322,10 +2327,24 @@ const server = http.createServer(async (req, res) => {
     } else if (req.url === '/api/docker/containers') {
         const host = getDockerHost();
         if (!host) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ configured: false })); return; }
-        try {
-            const containers = await dockerListContainers(host);
+        const nowTs = Date.now();
+        if (_dockerList.body && _dockerList.host === host && (nowTs - _dockerList.at) < 12000) {
             res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-            res.end(JSON.stringify({ configured: true, containers }));
+            res.end(_dockerList.body); return;
+        }
+        if (!_dockerList.inflight || _dockerList.host !== host) {
+            _dockerList.host = host;
+            _dockerList.inflight = dockerListContainers(host).then(containers => {
+                _dockerList.body = JSON.stringify({ configured: true, containers });
+                _dockerList.at = Date.now();
+                _dockerList.inflight = null;
+                return _dockerList.body;
+            }).catch(err => { _dockerList.inflight = null; throw err; });
+        }
+        try {
+            const body = await _dockerList.inflight || _dockerList.body;
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+            res.end(body);
         } catch (err) {
             res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
             res.end(JSON.stringify({ configured: true, error: err.message || 'Docker API unreachable' }));
