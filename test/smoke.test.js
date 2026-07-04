@@ -249,6 +249,25 @@ test('igApplyTpl leaves single braces alone (GraphQL bodies are safe)', () => {
   assert.equal(igApplyTpl('{ info { os } }', {}), '{ info { os } }');
 });
 
+test('igApplyTpl {{enc:...}} percent-encodes for URL/form contexts', () => {
+  const ctx = { cred: { username: 'ad min', password: 'p@ss&wo+rd#1' } };
+  assert.equal(igApplyTpl('{{enc:cred.password}}', ctx), 'p%40ss%26wo%2Brd%231');
+  assert.equal(igApplyTpl('u={{enc:cred.username}}', ctx), 'u=ad%20min');
+  // raw form still passes through unencoded (correct for headers/JSON)
+  assert.equal(igApplyTpl('{{cred.password}}', ctx), 'p@ss&wo+rd#1');
+});
+
+test('session-login credentials are encoded, not raw-interpolated', () => {
+  // qBittorrent form body and Synology query string must use the enc: mode so a
+  // password with &/+/# cannot corrupt the request (regression guard).
+  const qbt = INTEGRATIONS.qbittorrent.login.body;
+  assert.match(qbt, /\{\{enc:cred\.password\}\}/);
+  assert.doesNotMatch(qbt, /\{\{cred\.password\}\}/, 'qBittorrent must not raw-interpolate the password');
+  const syn = INTEGRATIONS.synology.login.path;
+  assert.match(syn, /\{\{enc:cred\.password\}\}/);
+  assert.doesNotMatch(syn, /passwd=\{\{cred\.password\}\}/, 'Synology must not raw-interpolate the password');
+});
+
 // ── 6. security response headers ──────────────────────────────────────────
 test('securityHeaders always sets CSP + hardening headers', () => {
   const h = securityHeaders({ headers: {}, socket: {} });
