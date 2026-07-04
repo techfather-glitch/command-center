@@ -1849,7 +1849,10 @@
 
     /* ── ≥768: tablets & up — icon rail is the sidebar, phone chrome goes away ── */
     @media (min-width: 768px) {
-        .app { grid-template-columns: 60px 1fr; }
+        /* Restore BOTH the two-column tracks AND the area map here: the ≤880px
+           Slate block flips grid-template-areas to a single column, and without
+           re-declaring it the 768–880px range renders a 60px sliver. */
+        .app { grid-template-columns: 60px 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "rail topbar" "rail view" "rail dock"; }
         .rail { display: flex; flex-direction: column; }
         .botnav, .botsheet, .botsheet-back { display: none !important; }
     }
@@ -1870,6 +1873,11 @@
         .rail { display: none; }
         .view { padding: 0; }
         .view-inner { padding: 10px 12px calc(84px + env(safe-area-inset-bottom)); }
+        /* Logs toolbar: give the container name its own line so it never shrinks
+           to 0 behind the fixed-width search + buttons. */
+        .logs-bar { flex-wrap: wrap; }
+        .logs-title { flex: 1 1 100%; }
+        .logs-search { flex: 1 1 auto; }
         /* bottom navigation in GAUGE clothes */
         .botnav { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 70; justify-content: space-around; gap: 2px;
             background: color-mix(in srgb, var(--s0) 92%, transparent); backdrop-filter: blur(14px);
