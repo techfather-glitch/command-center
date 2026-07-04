@@ -20,6 +20,14 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Bounded proxied upstream response sizes.
 
 ### Fixed
+- **Read-SSRF in the custom-tile proxy** — the customapi tile fetch was guarded
+  by a two-entry denylist, leaving loopback (Docker socket / own API), all
+  RFC1918, and every metadata-encoding bypass reachable. Now the host is resolved
+  and loopback/link-local/metadata/unspecified are rejected while LAN stays
+  allowed; the same guard covers `igFetch` and the port-probe.
+- **DOM-XSS in container buttons** — inline `onclick` handlers used the HTML
+  escaper `esc()` in a JS-string context, so a quote in a container name could
+  break out. Switched to `esc(jstr(...))`.
 - **Stored XSS (server-injected settings)** — the inline `<script>` that seeds
   client settings escaped `<` with a no-op, so a stored settings string could
   break out and inject HTML. The JSON is now `\uXXXX`-escaped (`<>&`, line
