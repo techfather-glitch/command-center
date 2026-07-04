@@ -16,7 +16,7 @@
         --bg:#07090A;   --s0:#0C0F11;  --s1:#12171A;  --s2:#182024;  --s3:#1F292E;
         --hair:rgba(255,255,255,0.055); --hair-2:rgba(255,255,255,0.10);
         /* Text — alpha ramp on near-black */
-        --t1:rgba(237,242,244,0.95); --t2:rgba(237,242,244,0.60); --t3:rgba(237,242,244,0.40); --t4:rgba(237,242,244,0.26);
+        --t1:rgba(237,242,244,0.95); --t2:rgba(237,242,244,0.68); --t3:rgba(237,242,244,0.55); --t4:rgba(237,242,244,0.40);
         /* Accent — teal, ONLY on live/active pixels. Status — saturated, ONLY on state-carrying pixels. */
         --live:#2DD4BF;
         --ok:#34D399; --warn:#F5B547; --crit:#F26D6D; --idle:#7C8A91; --info:#5AB6E8;
@@ -2196,10 +2196,10 @@
         <div class="rail-foot" id="railFoot"></div>
     </aside>
     <header class="topbar">
-        <div class="topbar-crumb" id="topbarCrumb">Home</div>
+        <div class="topbar-crumb" id="topbarCrumb" role="heading" aria-level="1">Home</div>
         <button class="verdict-pill" id="verdictPill" onclick="location.hash='#/alerts'" title="System status"><span class="vdot"></span><span id="verdictText">Checking…</span></button>
         <div class="topbar-right">
-            <span class="conn-badge" id="connBadge" hidden><span class="conn-dot"></span><span id="connTxt"></span></span>
+            <span class="conn-badge" id="connBadge" role="status" aria-live="polite" hidden><span class="conn-dot"></span><span id="connTxt"></span></span>
             <button class="cmdk-hint" onclick="openPalette()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
             <button class="ico-btn" id="topRefresh" onclick="this.querySelector('svg').classList.remove('spin');void this.offsetWidth;this.querySelector('svg').classList.add('spin');manualRefresh()" title="Refresh now" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
         </div>
@@ -3872,7 +3872,7 @@ function tileDocker() {
         </div>
         <a href="#/containers" class="svc-open" style="display:inline-block;margin-top:10px">${extra > 0 ? '+' + extra + ' more · ' : ''}All containers →</a>`;
 }
-function toast(msg) { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; document.body.appendChild(t); } t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 3400); }
+function toast(msg) { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.className = 'toast'; t.setAttribute('role', 'status'); t.setAttribute('aria-live', 'polite'); t.setAttribute('aria-atomic', 'true'); document.body.appendChild(t); } t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 3400); }
 
 /* Tracearr — live streaming activity (Plex/Tautulli-style sessions). */
 function tracearrSessions(p) {
@@ -4353,7 +4353,7 @@ function dnSection() {
     return `<section class="lane dn-lane"><div class="lane-head"><span class="eyebrow">Dropped Needle · music discovery</span><span class="lane-meta">${dn.user ? esc(String(dn.user)) + (dn.role ? ' (' + esc(String(dn.role)) + ')' : '') + ' · ' : ''}${dn.ok ? '<span class="dot ok"></span>backend online' : '<span class="dot warn"></span>backend degraded'}</span></div><hr class="hair">
         <div class="dn-body">
             <div class="dn-chips">${chips}</div>
-            <div class="dn-search"><input class="deck-search" id="dnQ" placeholder="Search artists & albums…" value="${esc(_dnQuery)}" onkeydown="dnSearch('${esc(base)}', event)"><button class="da-btn" onclick="dnSearch('${esc(base)}')">Search</button></div>
+            <div class="dn-search"><input class="deck-search" id="dnQ" aria-label="Search artists and albums" placeholder="Search artists & albums…" value="${esc(_dnQuery)}" onkeydown="dnSearch('${esc(base)}', event)"><button class="da-btn" onclick="dnSearch('${esc(base)}')">Search</button></div>
             <div id="dnResults">${_dnResHtml}</div>
             ${npRows ? `<div class="svc-group__label">Listening now</div>${npRows}` : ''}
             ${dlRows ? `<div class="svc-group__label">Acquiring · via slskd</div>${dlRows}` : ''}
@@ -4563,7 +4563,7 @@ PAGES.applications = function () {
     const ctl = dockerControl() && (Store.docker.containers || []).length > 0;   // control implies Docker actually lists the fleet
     const seg = `<div class="deck-controls">
         <div class="seg"><button aria-pressed="${appView === 'apps'}" onclick="setAppView('apps')">Apps <span class="mono">${appStacks().length}</span></button><button aria-pressed="${appView === 'containers'}" onclick="setAppView('containers')">Containers <span class="mono">${all.length}</span></button></div>
-        ${appView === 'apps' ? `<input class="deck-search" id="appSearchBox" placeholder="Search apps or images…" value="${esc(appSearch)}" oninput="onAppSearch(this.value)">` : '<span style="flex:1"></span>'}
+        ${appView === 'apps' ? `<input class="deck-search" id="appSearchBox" aria-label="Search apps or images" placeholder="Search apps or images…" value="${esc(appSearch)}" oninput="onAppSearch(this.value)">` : '<span style="flex:1"></span>'}
         <span class="deck-backend"><span class="dot ${ctl ? 'live' : 'idle'}"></span>${ctl ? 'Live Docker' : 'Read-only · cAdvisor'}${!ctl ? ' · <a href="#/settings" style="color:var(--t2)">connect</a>' : ''}</span>
     </div>`;
     if (appView === 'containers') return `${providerStrip('applications')}${seg}${containersBody()}`;
@@ -4618,7 +4618,7 @@ PAGES.logs = function () {
                 <div class="logs-bar">
                     <span class="logs-title">${iconImg(_logsSelName || 'log', 18)}<b>${esc(_logsSelName || '—')}</b></span>
                     <span style="flex:1"></span>
-                    <input class="logs-search" id="logsSearch" placeholder="Filter lines…" value="${esc(_logsSearch)}" oninput="onLogsSearch(this.value)" autocomplete="off">
+                    <input class="logs-search" id="logsSearch" aria-label="Filter log lines" placeholder="Filter lines…" value="${esc(_logsSearch)}" oninput="onLogsSearch(this.value)" autocomplete="off">
                     <button class="tbtn ${_logsFollow ? 'primary' : ''}" onclick="logsToggleFollow()" title="Auto-refresh every 3s"><span class="dot ${_logsFollow ? 'live' : 'idle'}"></span>Follow</button>
                     <button class="tbtn" onclick="logsLoad()">Refresh</button>
                 </div>
@@ -4802,7 +4802,7 @@ window.openClientsDrawer = function () {
     const n = ((u.clients && (u.clients.list || u.clients.top)) || []).length;
     _cliQ = '';
     openDrawer('All clients', `${n} active · sorted by throughput`,
-        `<input class="deck-search" id="cliQ" placeholder="Search name, IP, vendor, MAC…" style="width:100%;margin:4px 0 8px" oninput="filterClients(this.value)"><div id="cliListHost">${clientsDrawerRows()}</div>`, '');
+        `<input class="deck-search" id="cliQ" aria-label="Search clients by name, IP, vendor or MAC" placeholder="Search name, IP, vendor, MAC…" style="width:100%;margin:4px 0 8px" oninput="filterClients(this.value)"><div id="cliListHost">${clientsDrawerRows()}</div>`, '');
     setTimeout(() => { const i = document.getElementById('cliQ'); if (i) i.focus(); }, 260);
 };
 function apRow(d) {
@@ -5194,7 +5194,7 @@ function containersBody() {
     return `<div class="deck-view">
         <div class="deck-controls">
             <div class="seg">${seg('all', 'All', all.length)}${seg('running', 'Running', running)}${seg('stopped', 'Stopped', all.length - running)}${attn ? seg('attention', 'Attention', attn) : ''}</div>
-            <input class="deck-search" id="ctrSearch" placeholder="Search name or image…" value="${esc(ctrSearch)}" oninput="onCtrSearch(this.value)">
+            <input class="deck-search" id="ctrSearch" aria-label="Search containers by name or image" placeholder="Search name or image…" value="${esc(ctrSearch)}" oninput="onCtrSearch(this.value)">
         </div>
         <div class="instrument" style="padding:12px 14px"><div class="state-ribbon">${ctrStateRibbon(all)}</div></div>
         <section class="lane"><div class="lane-body" id="ctrListHost">${ctrCardsHtml()}</div></section>
@@ -5486,7 +5486,7 @@ function igCatalogCard() {
     return `<div class="card" style="margin-bottom:18px"><div class="card-title">Integrations <span class="sub">${cats.filter(c => c.enabled).length} enabled · ${cats.length} available</span></div>
         <div class="set-desc" style="margin-bottom:10px">Connect any service — enter its URL + key, <b>Test</b>, then <b>Enable</b> to add a live tile to your dashboard.</div>
         ${disc.length ? `<div class="ig-discover"><span class="ig-disc-ico">✨</span><div class="ig-disc-body"><b>Found ${disc.length} in your setup</b> — the URL is pre-filled; just add a key and Enable: ${disc.slice(0, 14).map(d => `<button class="ig-disc-chip" onclick="igToggle('${d.id}')">${esc(d.title)}</button>`).join(' ')}</div></div>` : ''}
-        <input class="set-input" id="igSearch" placeholder="Search ${cats.length} integrations…" oninput="igFilterCatalog(this.value)" style="margin-bottom:12px" autocomplete="off">
+        <input class="set-input" id="igSearch" aria-label="Search integrations" placeholder="Search ${cats.length} integrations…" oninput="igFilterCatalog(this.value)" style="margin-bottom:12px" autocomplete="off">
         <div class="ig-cat-grid" id="igCatGrid">${sorted.map(d => igCatalogRow(d, !isPrimary(d))).join('')}</div>
         ${extra ? `<button class="tbtn ig-browse-all" style="margin-top:12px" onclick="igToggleAll(this)">Browse all ${cats.length} integrations →</button>` : ''}</div>`;
 }
@@ -5630,6 +5630,7 @@ const SET_INDEX = [
 ];
 let _setMobileView = 'list';   // phone: 'list' (section index) | 'detail' (one section)
 window.setSettingsDest = function (d) {
+    clearTimeout(_setSearchT);   // a hit-click clears the search then navigates — don't let the debounced re-render steal focus back afterward
     _setDest = d;
     if (isPhone()) _setMobileView = 'detail';
     if (d === 'security' && !Store.audit) loadAudit();
@@ -5940,7 +5941,7 @@ function mobileSettings() {
     const groups = [['Personalize', ['general', 'appearance']], ['Connections', ['providers', 'fleet']], ['System', ['security', 'automation', 'data', 'about']]];
     const row = sec => `<button class="mset-row" onclick="setSettingsDest('${sec.id}')"><span class="mset-ico">${navSvg(sec.ico)}</span><span class="mset-txt"><b>${esc(sec.label)}</b><i>${esc(sec.sub)}</i></span><span class="mset-chev">›</span></button>`;
     return `<div class="mset">
-        <input class="set-input" id="setQ" placeholder="Search settings…" value="${esc(_setQ)}" oninput="onSetSearch(this.value)" autocomplete="off">
+        <input class="set-input" id="setQ" aria-label="Search settings" placeholder="Search settings…" value="${esc(_setQ)}" oninput="onSetSearch(this.value)" autocomplete="off">
         ${hitRows}
         ${q ? '' : settingsIntel() + groups.map(([g, ids]) => `<div class="svc-group__label" style="margin:16px 4px 6px">${g}</div><div class="mset-group">${ids.map(id => row(SET_SECTIONS.find(s => s.id === id))).join('')}</div>`).join('') + `<div class="lbl" style="text-align:center;padding:14px 0 4px"><span class="dot ok" style="margin-right:6px"></span>Vault encrypted · AES-256-GCM</div>`}
     </div>`;
@@ -5953,7 +5954,7 @@ PAGES.settings = function () {
     const railItem = (sec) => (!q || hitSecs.has(sec.id)) ? `<button class="set-rail-item ${_setDest === sec.id ? 'active' : ''}" onclick="setSettingsDest('${sec.id}')">${navSvg(sec.ico)}<span class="sri-txt"><b>${sec.label}</b><i>${sec.sub}</i></span></button>` : '';
     const hitRows = q ? `<div class="set-hits">${hits.slice(0, 8).map(h => `<button class="set-hit" onclick="onSetSearch('');setSettingsDest('${h[0]}')"><b>${esc(h[1])}</b><i>${esc(SET_SECTIONS.find(x => x.id === h[0]).label)}</i></button>`).join('') || '<div class="lbl" style="padding:6px 10px">No settings match.</div>'}</div>` : '';
     const rail = `<aside class="set-rail">
-        <input class="set-input" id="setQ" placeholder="Search settings…" value="${esc(_setQ)}" oninput="onSetSearch(this.value)" autocomplete="off" style="margin-bottom:8px">
+        <input class="set-input" id="setQ" aria-label="Search settings" placeholder="Search settings…" value="${esc(_setQ)}" oninput="onSetSearch(this.value)" autocomplete="off" style="margin-bottom:8px">
         ${hitRows}
         <nav class="set-rail-list">${SET_SECTIONS.map(railItem).join('')}</nav>
         <div class="set-rail-foot" title="AES-256-GCM · key file mode 0600"><span class="dot ok"></span>Vault encrypted</div></aside>`;
@@ -6086,7 +6087,7 @@ function openPalette() {
     let ov = document.getElementById('cmdk');
     if (!ov) {
         ov = document.createElement('div'); ov.id = 'cmdk'; ov.className = 'cmdk-ov';
-        ov.innerHTML = '<div class="cmdk" role="dialog" aria-modal="true" aria-label="Command palette"><input class="cmdk-input" id="cmdkInput" placeholder="Search services, containers, pages, actions…" autocomplete="off" spellcheck="false"><div class="cmdk-list" id="cmdkList"></div></div>';
+        ov.innerHTML = '<div class="cmdk" role="dialog" aria-modal="true" aria-label="Command palette"><input class="cmdk-input" id="cmdkInput" aria-label="Search services, containers, pages and actions" placeholder="Search services, containers, pages, actions…" autocomplete="off" spellcheck="false"><div class="cmdk-list" id="cmdkList"></div></div>';
         document.body.appendChild(ov);
         ov.addEventListener('mousedown', e => { if (e.target === ov) closePalette(); });
         ov.querySelector('#cmdkInput').addEventListener('input', e => { Palette.q = e.target.value; Palette.sel = 0; paletteRender(); });
