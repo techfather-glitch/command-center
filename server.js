@@ -3097,7 +3097,10 @@ const server = http.createServer(async (req, res) => {
 // must have no side effects, so the server never binds during tests.
 if (require.main === module) {
     server.listen(PORT, '0.0.0.0', () => {
-        console.log(`🐉 Dashboard running at http://127.0.0.1:${PORT}/`);
+        // Bound to 0.0.0.0 (all interfaces) — reachable via the mapped port and
+        // any reverse proxy. Show the real external URL when PUBLIC_URL is set so
+        // a container log never looks like it's stuck on localhost.
+        console.log(`🐉 Command Center listening on 0.0.0.0:${PORT}${PUBLIC_URL ? ` — ${PUBLIC_URL}` : ` — http://localhost:${PORT}/`}`);
     });
 
     // Continuously sample WAN throughput in the background so the dashboard

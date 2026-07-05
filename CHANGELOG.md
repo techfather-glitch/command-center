@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.6] — 2026-07-05
+
+### Fixed
+- **Misleading startup log.** The boot line read `Dashboard running at
+  http://127.0.0.1:8888/` even though the server binds to `0.0.0.0` and is
+  reachable through the mapped port / reverse proxy — which made a container log
+  look like it was stuck on localhost or had "changed" its address. It now prints
+  `Command Center listening on 0.0.0.0:8888` plus the real `PUBLIC_URL` when set.
+
 ## [2.0.5] — 2026-07-05
 
 ### Changed
@@ -203,6 +212,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.6]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.6
 [2.0.5]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.5
 [2.0.4]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.4
 [2.0.3]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.3
