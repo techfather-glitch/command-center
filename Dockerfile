@@ -1,9 +1,6 @@
 # Command Center — a single Node.js process, zero dependencies, no build step.
 FROM node:22-alpine
 
-# Run as a non-root user.
-RUN addgroup -S cc && adduser -S cc -G cc
-
 WORKDIR /app
 COPY server.js app.html ./
 COPY assets ./assets
@@ -12,8 +9,12 @@ COPY assets ./assets
 ENV DATA_DIR=/app/data \
     PORT=8888 \
     NODE_ENV=production
-RUN mkdir -p /app/data && chown -R cc:cc /app
-USER cc
+# Runs as root so writes to a mounted data volume succeed regardless of which
+# uid owns the host directory — a non-root container hit EACCES writing its
+# vault/settings on common bind-mounts, silently preventing anything from saving.
+# To run unprivileged instead, set `user: "<uid>:<gid>"` in compose (or --user)
+# and make the data dir writable by that uid.
+RUN mkdir -p /app/data
 
 EXPOSE 8888
 

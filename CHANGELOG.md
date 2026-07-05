@@ -4,6 +4,17 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.5] — 2026-07-05
+
+### Changed
+- **The container now runs as root** so writes to a mounted data volume succeed
+  regardless of which uid owns the host directory. Running non-root, the app hit
+  `EACCES: permission denied` writing its vault and settings on common host
+  bind-mounts, which silently prevented anything from being saved — first-run
+  setup, provider config and imports all *looked* like they worked but never
+  persisted. To run unprivileged instead, set `user: "<uid>:<gid>"` in your
+  compose (or `--user`) and make the data directory writable by that uid.
+
 ## [2.0.4] — 2026-07-05
 
 ### Added
@@ -192,6 +203,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.5]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.5
 [2.0.4]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.4
 [2.0.3]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.3
 [2.0.2]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.2
