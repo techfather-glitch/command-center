@@ -1796,6 +1796,16 @@
        blank curtain over the whole app. */
     [hidden] { display: none !important; }
 
+    /* — import review rows (Settings → Data) — */
+    .imp-list { display: flex; flex-direction: column; gap: 10px; }
+    .imp-row { display: flex; flex-direction: column; gap: 6px; padding: 10px 11px; border: 1px solid var(--line, #1c2226); border-radius: 8px; background: var(--bg-1, #0c0f11); }
+    .imp-row.need { border-color: color-mix(in srgb, #e5a00d 55%, transparent); }
+    .imp-head { display: flex; align-items: center; gap: 8px; }
+    .imp-name { font-weight: 600; }
+    .imp-badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line, #2a2f33); color: var(--muted, #9aa3a8); }
+    .imp-badge.ok { color: var(--accent, #2DD4BF); border-color: color-mix(in srgb, var(--accent, #2DD4BF) 45%, transparent); }
+    .imp-url { width: 100%; }
+
     /* — first-run setup overlay — */
     .onboard { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex; align-items: center; justify-content: center; overflow-y: auto; }
     .onboard::before { content: ''; position: fixed; inset: 0; background: radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--live) 8%, transparent), transparent 60%); pointer-events: none; }
@@ -5862,33 +5872,92 @@ function settingsAutomation() {
         <div class="insp-row"><span class="insp-k">Containers summary</span><span class="insp-v">15s server cache · 20s pull</span></div>
         <div class="insp-row"><span class="insp-k">Integration widgets</span><span class="insp-v">per-provider poll (see its card)</span></div></div>`;
 }
+function downloadJson(data, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+// Redacted export — secrets are *** placeholders, safe to share/store anywhere.
 window.exportSettings = function () {
     try {
-        const data = JSON.stringify(Store.settings || {}, null, 2);
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
-        a.download = 'command-center-settings-' + new Date().toISOString().slice(0, 10) + '.json';
-        a.click(); URL.revokeObjectURL(a.href);
+        downloadJson(JSON.stringify(Store.settings || {}, null, 2), 'command-center-config-' + new Date().toISOString().slice(0, 10) + '.json');
         try { localStorage.setItem('cc-last-export', String(Date.now())); } catch (e) {}
-        toast('Configuration exported ✓'); render();
+        toast('Config exported ✓ — secrets redacted, safe to share'); render();
     } catch (e) { toast('Export failed: ' + e.message); }
 };
+// Full backup — pulls real secrets from the server. Contains credentials.
+window.exportFull = async function () {
+    if (!window.confirm('Download a FULL backup that INCLUDES your API keys and passwords in plaintext?\n\nAnyone with this file has your credentials — store it securely and delete it once you\'ve imported it elsewhere.')) return;
+    try {
+        const r = await fetch('/api/settings/full', { cache: 'no-store' });
+        if (r.status === 401) { maybeLogin(); return; }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        downloadJson(JSON.stringify(await r.json(), null, 2), 'command-center-FULL-backup-' + new Date().toISOString().slice(0, 10) + '.json');
+        try { localStorage.setItem('cc-last-export', String(Date.now())); } catch (e) {}
+        toast('Full backup exported ✓ — contains secrets, store it securely');
+    } catch (e) { toast('Export failed: ' + e.message); }
+};
+// ── Import: parse → review each provider's URL/keys → apply, with an HONEST
+//    success/failure (the old importer reported ✓ even when the save 4xx'd). ──
+let _importObj = null;
+function importIds(obj) {
+    return Array.from(new Set([...Object.keys((obj && obj.endpoints) || {}), ...Object.keys((obj && obj.integrations) || {}), ...Object.keys((obj && obj.apiKeys) || {})]));
+}
 window.importSettings = async function (input) {
-    const f = input.files && input.files[0]; if (!f) return;
+    const f = input.files && input.files[0]; input.value = ''; if (!f) return;
     try {
         const obj = JSON.parse(await f.text());
-        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('not a settings object');
-        if (!window.confirm('Replace the current configuration with "' + f.name + '"? Vaulted secrets are kept — *** placeholders never overwrite them.')) { input.value = ''; return; }
-        await jpost('/api/settings', obj); await refreshSettings(); render(); toast('Configuration imported ✓');
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('that file is not a configuration object');
+        _importObj = obj; openImportReview(f.name);
     } catch (e) { toast('Import failed: ' + e.message); }
-    input.value = '';
+};
+function openImportReview(filename) {
+    const obj = _importObj || {};
+    const ids = importIds(obj);
+    const rowFor = (id) => {
+        const def = (Store.integrations || []).find(d => d.id === id);
+        const title = def ? def.title : id;
+        const url = (obj.endpoints && obj.endpoints[id] && obj.endpoints[id].url) || '';
+        const hasKey = !!(obj.apiKeys && obj.apiKeys[id] && Object.keys(obj.apiKeys[id]).length);
+        // Only flag "needs URL" when the provider's default is a LAN/localhost
+        // placeholder; hosted-API providers (Tailscale, Cloudflare…) work blank.
+        const hostedDefault = def && def.defaultUrl && !/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|127\.|localhost|::1)/i.test(def.defaultUrl);
+        const needUrl = hasKey && !url && !hostedDefault;
+        return `<div class="imp-row${needUrl ? ' need' : ''}"><div class="imp-head"><span class="imp-name">${esc(title)}</span>${hasKey ? '<span class="imp-badge ok">key ✓</span>' : '<span class="imp-badge">no key</span>'}</div>
+            <input class="set-input imp-url" data-ig="${esc(id)}" value="${esc(url)}" placeholder="${needUrl ? 'URL required — a key is present' : 'http://host:port'}"></div>`;
+    };
+    let special = '';
+    if (obj.dockerHost !== undefined) special += `<div class="imp-row"><div class="imp-head"><span class="imp-name">Docker host</span></div><input class="set-input imp-url" data-docker="1" value="${esc(obj.dockerHost || '')}" placeholder="http://host:2375"></div>`;
+    if (obj.unifi) special += `<div class="imp-row"><div class="imp-head"><span class="imp-name">UniFi</span>${(obj.unifi.username || obj.unifi.password) ? '<span class="imp-badge ok">login ✓</span>' : ''}</div><input class="set-input imp-url" data-uni="1" value="${esc(obj.unifi.url || '')}" placeholder="https://192.168.1.1"></div>`;
+    const n = ids.length + (obj.unifi ? 1 : 0) + (obj.dockerHost !== undefined ? 1 : 0);
+    const body = `<div class="set-desc" style="margin-bottom:12px">From <b>${esc(filename)}</b> — <b>${n}</b> provider${n === 1 ? '' : 's'}. Any keys in the file are encrypted into the vault on save; secrets already set here are kept. Review each URL — change any that differ on this instance — then apply. Amber rows have a key but need a URL.</div>
+        <div class="imp-list">${special}${ids.map(rowFor).join('')}</div>`;
+    openDrawer('Import configuration', 'review &amp; apply', body, `<button class="tbtn" onclick="closeDrawer()">Cancel</button><button class="tbtn primary" onclick="applyImport()">Apply import</button>`);
+}
+window.applyImport = async function () {
+    const obj = _importObj; if (!obj) { closeDrawer(); return; }
+    document.querySelectorAll('.imp-url').forEach(inp => {
+        const v = inp.value.trim();
+        if (inp.hasAttribute('data-docker')) obj.dockerHost = v;
+        else if (inp.hasAttribute('data-uni')) { obj.unifi = obj.unifi || {}; obj.unifi.url = v; }
+        else if (inp.hasAttribute('data-ig')) { const id = inp.getAttribute('data-ig'); obj.endpoints = obj.endpoints || {}; obj.endpoints[id] = Object.assign({}, obj.endpoints[id], { url: v }); }
+    });
+    try {
+        const res = await jpost('/api/settings', obj);
+        if (!res || res.error || res.ok === false) throw new Error((res && res.error) || 'the server rejected the save');
+        await refreshSettings(); await refreshIntegrations(); if (typeof refreshMeta === 'function') await refreshMeta();
+        const n = importIds(obj).length; _importObj = null; closeDrawer(); render();
+        toast('Imported ✓ — ' + n + ' provider' + (n === 1 ? '' : 's') + ' saved. Open a concept page to see them fill in.');
+    } catch (e) { toast('Import failed: ' + e.message); }
 };
 function settingsData() {
     const meta = Store.meta || {};
     let lastExp = 0; try { lastExp = Number(localStorage.getItem('cc-last-export')) || 0; } catch (e) {}
     return `<div class="grid-2">
-        <div class="card"><div class="card-title">Export configuration</div><div class="set-desc" style="margin-bottom:10px">Services, endpoints, integrations and tiles as JSON. Secrets stay in the encrypted vault — the export carries *** placeholders, safe to store anywhere.</div><button class="tbtn primary" onclick="exportSettings()">Download export</button><div class="set-desc" style="margin-top:8px">${lastExp ? 'Last export ' + fmtAgo(lastExp) : 'Never exported on this browser.'}</div></div>
-        <div class="card"><div class="card-title">Import configuration</div><div class="set-desc" style="margin-bottom:10px">Restore a previous export. Placeholders never overwrite vaulted secrets, so an import can't wipe your credentials.</div><label class="tbtn" style="display:inline-block;cursor:pointer">Choose file…<input type="file" accept="application/json" style="display:none" onchange="importSettings(this)"></label></div>
+        <div class="card"><div class="card-title">Export configuration</div><div class="set-desc" style="margin-bottom:10px">Endpoints, integrations, tiles and layout as JSON.</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="tbtn" onclick="exportSettings()">Safe export</button><button class="tbtn primary" onclick="exportFull()">Full backup (with keys)</button></div>
+            <div class="set-desc" style="margin-top:8px"><b>Safe</b> redacts secrets (<code>***</code>) — fine to share. <b>Full backup</b> includes your keys &amp; passwords in plaintext — use it to move to a new instance, then delete it.${lastExp ? ' · Last export ' + fmtAgo(lastExp) : ''}</div></div>
+        <div class="card"><div class="card-title">Import configuration</div><div class="set-desc" style="margin-bottom:10px">Load an export or migration file. You'll review each provider's URL before anything saves; keys in the file are encrypted into the vault, and secrets already set here are kept.</div><label class="tbtn primary" style="display:inline-block;cursor:pointer">Choose file…<input type="file" accept="application/json" style="display:none" onchange="importSettings(this)"></label></div>
     </div>
     <div class="card" style="margin-top:14px"><div class="card-title">On-disk data <span class="sub">measured on the server</span></div>
         <div class="insp-row"><span class="insp-k">Icon cache</span><span class="insp-v">${meta.iconCache != null ? meta.iconCache + ' icons · self-hosted' : '—'}</span></div>

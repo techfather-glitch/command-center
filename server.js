@@ -192,6 +192,28 @@ function redactDashboardSettings(settings) {
     }
     return out;
 }
+// Full config INCLUDING real secrets — for a "full backup" export that can move
+// to another instance with credentials intact. The inverse of redaction: fills
+// the vault's real values back into apiKeys/unifi/customTiles. The dashboard
+// password hash lives under vault.auth and is deliberately NOT included.
+function fullDashboardSettings() {
+    const out = cloneJson(readDashboardSettings());
+    const vault = readSecretVault();
+    out.apiKeys = out.apiKeys && typeof out.apiKeys === 'object' ? out.apiKeys : {};
+    for (const scope of Object.keys(vault)) {
+        if (!scope.startsWith('apiKeys.')) continue;
+        const service = scope.slice('apiKeys.'.length);
+        out.apiKeys[service] = Object.assign({}, out.apiKeys[service], vault[scope]);
+    }
+    if (Object.keys(out.apiKeys).length === 0) delete out.apiKeys;
+    if (vault.unifi && typeof vault.unifi === 'object') out.unifi = Object.assign({}, out.unifi, vault.unifi);
+    if (Array.isArray(out.customTiles)) {
+        for (const tile of out.customTiles) {
+            if (tile && tile.id && (vault.customTiles || {})[String(tile.id)]) tile.headerVal = vault.customTiles[String(tile.id)];
+        }
+    }
+    return out;
+}
 function mergeSensitiveSettings(incoming, existing) {
     const vault = readSecretVault();
     const { clean, vault: nextVault } = pullSecretsIntoVault(incoming, vault);
@@ -2381,6 +2403,11 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ entries: [], error: e.message }));
         }
+    } else if (req.url === '/api/settings/full' && req.method === 'GET') {
+        // Full backup — includes decrypted secrets. Auth-gated like every /api
+        // route (gate 3 above already 401s an unauthenticated caller).
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(fullDashboardSettings()));
     } else if (req.url === '/api/settings' && req.method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
         res.end(JSON.stringify(redactDashboardSettings(readDashboardSettings())));

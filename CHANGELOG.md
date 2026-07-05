@@ -4,6 +4,24 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.4] — 2026-07-05
+
+### Added
+- **Full-backup export and a review-based import** (Settings → Data). Export now
+  offers *Safe* (secrets redacted `***`, as before) and *Full backup* (includes
+  your keys and passwords) so a whole configuration — credentials and all — can
+  move to another instance. Import opens a **review of every provider**: edit each
+  URL, see which carry a key, with a highlight on any that have a key but still
+  need a URL, before anything is saved. Keys in the file are encrypted into the
+  vault on save; secrets already set are kept.
+
+### Fixed
+- **The importer reported success even when the save failed.** It ignored the
+  server's response and always toasted "imported ✓", so a rejected save (for
+  example a cross-origin POST blocked behind a reverse proxy) looked like it
+  worked while nothing persisted. It now checks the result and surfaces the real
+  error.
+
 ## [2.0.3] — 2026-07-05
 
 ### Security
@@ -174,6 +192,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.4]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.4
 [2.0.3]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.3
 [2.0.2]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.2
 [2.0.1]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.1
