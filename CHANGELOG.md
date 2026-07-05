@@ -4,7 +4,11 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] — 2026-07-04
+
+The first public release — a ground-up operations console for the homelab,
+organized around concepts (not products) behind a common provider interface,
+hardened across three adversarial security review passes.
 
 ### Security
 - Password hashing upgraded from SHA-256 to **scrypt** (salted, work-factored,
@@ -98,9 +102,10 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reverse-proxy / HTTPS awareness: `TRUST_PROXY`, `PUBLIC_URL`, forwarded-header
   detection and auto-`Secure` session cookies.
 
-## [2.0.0] — GAUGE
+## The GAUGE foundation
 
-The ground-up redesign into an operations console.
+The 2.0 release above is built on this ground-up redesign into an operations
+console.
 
 ### Added
 - **GAUGE design language** — a near-black instrument-panel UI where structure
@@ -132,5 +137,4 @@ The ground-up redesign into an operations console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
-[Unreleased]: https://github.com/techfather-glitch/command-center/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.0
