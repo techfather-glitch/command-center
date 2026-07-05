@@ -28,6 +28,9 @@ docker run -d --name command-center \
 Open <http://localhost:8888> and add your first provider in **Settings →
 Providers**.
 
+Images are multi-architecture (`linux/amd64` + `linux/arm64`), so the same tag
+runs on x86 servers and ARM boards (Raspberry Pi 4/5, etc.) with no extra flags.
+
 ## Docker Compose
 
 ```yaml
