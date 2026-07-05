@@ -4,6 +4,18 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] — 2026-07-05
+
+### Fixed
+- **Blank dashboard after first-run setup, and in demo mode.** The full-screen
+  onboarding and sign-in overlays are shown/hidden with the `hidden` attribute,
+  but a `.onboard { display: flex }` rule overrode the browser's built-in
+  `[hidden] { display: none }` (author styles beat the UA stylesheet). So once an
+  overlay was dismissed it kept painting an *empty* fixed, near-black curtain over
+  the entire app — the dashboard rendered correctly underneath but was completely
+  covered. Added a `[hidden] { display: none !important }` guard so anything
+  hidden via the attribute genuinely stays hidden.
+
 ## [2.0.1] — 2026-07-05
 
 ### Fixed
@@ -149,5 +161,6 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.2]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.2
 [2.0.1]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.1
 [2.0.0]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.0

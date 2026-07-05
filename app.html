@@ -1790,6 +1790,12 @@
     .dn-np-prog { font-size: 11px; color: var(--t2); font-feature-settings: var(--tnum); }
     .dn-np-u { font: var(--f-lbl); color: var(--t4); }
 
+    /* An element hidden via the `hidden` attribute must stay hidden: author
+       `display` rules (like .onboard's below) otherwise beat the UA
+       `[hidden]{display:none}` rule, leaving an empty fixed overlay painting a
+       blank curtain over the whole app. */
+    [hidden] { display: none !important; }
+
     /* — first-run setup overlay — */
     .onboard { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex; align-items: center; justify-content: center; overflow-y: auto; }
     .onboard::before { content: ''; position: fixed; inset: 0; background: radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--live) 8%, transparent), transparent 60%); pointer-events: none; }
