@@ -4,6 +4,18 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] — 2026-07-05
+
+### Fixed
+- **Sign-in loop when `PUBLIC_URL` is https but the dashboard is opened over
+  plain http** (e.g. directly at `http://<LAN-IP>:8888`). The session cookie's
+  `Secure` flag was derived from `PUBLIC_URL` rather than the actual connection,
+  so a browser on `http://` silently dropped the cookie and every login bounced
+  straight back to the lock screen. `Secure` now tracks the real transport — a
+  TLS socket or a trusted proxy's forwarded-proto header — independent of
+  `PUBLIC_URL`, so a proxied https origin and a direct http LAN hit both keep the
+  session. Guarded by a regression test.
+
 ## [2.0.0] — 2026-07-04
 
 The first public release — a ground-up operations console for the homelab,
@@ -137,4 +149,5 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.1]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.1
 [2.0.0]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.0

@@ -20,7 +20,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const cc = require('../server.js');
 
-const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget } = cc;
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie } = cc;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
@@ -284,6 +284,24 @@ test('HSTS is present only behind TLS, absent on plain HTTP', () => {
   assert.equal(plain['Strict-Transport-Security'], undefined);
   const tls = securityHeaders({ headers: { 'x-forwarded-proto': 'https' }, socket: {} });
   assert.match(tls['Strict-Transport-Security'], /max-age=/);
+});
+
+// ── 6b. session cookie: Secure tracks the real transport, not PUBLIC_URL ───
+// Regression guard for the login-loop bug: with PUBLIC_URL=https set, a direct
+// http://LAN-IP request must still get a NON-Secure cookie, or the browser drops
+// it and every sign-in bounces back to the lock screen. Secure follows the
+// actual transport (real TLS socket or a trusted proxy's forwarded-proto).
+test('sessionCookie is HttpOnly + SameSite=Strict, and Secure only over TLS', () => {
+  const http = sessionCookie({ headers: {}, socket: {} }, 'cc_session', 'tok', 3600);
+  assert.match(http, /cc_session=tok/);
+  assert.match(http, /HttpOnly/);
+  assert.match(http, /SameSite=Strict/);
+  assert.doesNotMatch(http, /Secure/, 'a cookie returned over http:// must NOT be Secure (else it is dropped)');
+
+  const viaProxy = sessionCookie({ headers: { 'x-forwarded-proto': 'https' }, socket: {} }, 'cc_session', 'tok', 3600);
+  assert.match(viaProxy, /; Secure/, 'https behind a trusted proxy -> Secure');
+  const tlsSock = sessionCookie({ headers: {}, socket: { encrypted: true } }, 'cc_session', 'tok', 3600);
+  assert.match(tlsSock, /; Secure/, 'a direct TLS socket -> Secure');
 });
 
 // ── 7b. inline-script JSON escaping (stored-XSS guard) ────────────────────

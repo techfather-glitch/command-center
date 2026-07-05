@@ -1936,7 +1936,25 @@ function reqHost(req) {
     if (TRUST_PROXY) { const xh = (req.headers['x-forwarded-host'] || '').split(',')[0].trim(); if (xh) return xh; }
     return req.headers.host || 'localhost';
 }
-function isSecureRequest(req) { return reqScheme(req) === 'https'; }
+// Whether THIS request actually arrived over TLS — used for the session cookie's
+// Secure flag and HSTS. Deliberately independent of PUBLIC_URL: PUBLIC_URL sets
+// the canonical scheme for building absolute links, but it must NOT force
+// `Secure` onto a cookie handed back over a real http:// connection (e.g. a
+// direct http://LAN-IP hit while PUBLIC_URL is https). A Secure cookie received
+// over http is silently dropped by the browser, so every login would bounce
+// straight back to the lock screen. Transport = the socket is TLS, or a trusted
+// proxy says so via a forwarded-proto header.
+function reqIsTls(req) {
+    if (req && req.socket && req.socket.encrypted) return true;
+    if (TRUST_PROXY && req && req.headers) {
+        const xf = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+        if (xf) return xf === 'https';
+        if ((req.headers['x-forwarded-ssl'] || '') === 'on') return true;
+        if (req.headers['forwarded'] && /proto=https/i.test(req.headers['forwarded'])) return true;
+    }
+    return false;
+}
+function isSecureRequest(req) { return reqIsTls(req); }
 function publicOrigin(req) { return PUBLIC_URL || `${reqScheme(req)}://${reqHost(req)}`; }
 // Build a Set-Cookie that upgrades to Secure automatically behind TLS.
 // SameSite=Strict: the dashboard has no cross-site entry flow, so the cookie is
@@ -3061,4 +3079,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest };
