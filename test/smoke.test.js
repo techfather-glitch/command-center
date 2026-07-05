@@ -20,7 +20,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const cc = require('../server.js');
 
-const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie } = cc;
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, SECRET_FIELDS } = cc;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
@@ -284,6 +284,23 @@ test('HSTS is present only behind TLS, absent on plain HTTP', () => {
   assert.equal(plain['Strict-Transport-Security'], undefined);
   const tls = securityHeaders({ headers: { 'x-forwarded-proto': 'https' }, socket: {} });
   assert.match(tls['Strict-Transport-Security'], /max-age=/);
+});
+
+// ── 6a. every provider credential field is vaulted, never left in settings ──
+// If a new integration introduces a credential field name that SECRET_FIELDS
+// doesn't cover, that secret would be written to the plaintext settings file
+// (and ride along in exports) instead of the encrypted vault. Enforce coverage.
+test('SECRET_FIELDS covers every credential field name in the registry', () => {
+  const missing = new Set();
+  for (const def of Object.values(INTEGRATIONS)) {
+    const a = def.auth || {};
+    for (const k of ['field', 'userField', 'passField', 'tokenField', 'secretField']) {
+      if (a[k] && !SECRET_FIELDS.has(a[k])) missing.add(a[k]);
+    }
+  }
+  assert.deepEqual([...missing], [], 'credential fields not vaulted (would leak to plaintext settings): ' + [...missing].join(', '));
+  // Dropped Needle stores a session token set outside the auth descriptor.
+  assert.ok(SECRET_FIELDS.has('sessionToken'), 'sessionToken must be vaulted');
 });
 
 // ── 6b. session cookie: Secure tracks the real transport, not PUBLIC_URL ───

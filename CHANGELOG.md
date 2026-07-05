@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] — 2026-07-05
+
+### Security
+- **Some provider credentials were written to the plaintext settings file
+  instead of the encrypted vault.** The allowlist that decides which credential
+  fields get pulled into the vault (`SECRET_FIELDS`) omitted the `apikey`,
+  `sessionToken`, `user` and `tokenid` field names — so the Emby API key, the
+  Dropped Needle session token, and Proxmox / PBS token IDs sat unencrypted in
+  `dashboard-settings.json` and rode along in config exports. Completed the
+  allowlist and added a smoke test that keeps it in sync with the provider
+  registry. Re-save (or re-import) the affected providers to move any existing
+  secrets into the vault.
+
 ## [2.0.2] — 2026-07-05
 
 ### Fixed
@@ -161,6 +174,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.3]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.3
 [2.0.2]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.2
 [2.0.1]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.1
 [2.0.0]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.0

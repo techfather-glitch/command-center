@@ -45,7 +45,12 @@ function writeDashboardSettings(settings) {
 }
 
 const SECRET_SENTINEL='***';
-const SECRET_FIELDS = new Set(['key', 'username', 'password', 'token', 'secret']);
+// Every credential field name any integration's `auth` descriptor can use, so
+// each is pulled into the encrypted vault and never left in the plaintext
+// settings file. Keep in sync with the registry (a smoke test enforces it):
+//   field/userField/passField/tokenField/secretField across INTEGRATIONS, plus
+//   `sessionToken` (set by the Dropped Needle sign-in flow, not an auth field).
+const SECRET_FIELDS = new Set(['key', 'apikey', 'username', 'password', 'token', 'sessionToken', 'secret', 'user', 'tokenid']);
 const SECRETS_PATH = path.join(DATA_DIR, 'dashboard-secrets.json');
 const SECRET_KEY_PATH = path.join(DATA_DIR, 'dashboard-secret.key');
 
@@ -3079,4 +3084,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS };
