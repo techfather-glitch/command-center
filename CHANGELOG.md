@@ -4,6 +4,18 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.11] — 2026-07-05
+
+### Fixed
+- **Login loop caused by container restarts.** Sessions were kept in memory, so
+  every restart wiped them and instantly invalidated your session cookie (the
+  logs' *"cookie WAS sent but is not a valid session"*), forcing a re-login — and
+  if the container was restart-looping (e.g. OOM), you could never stay signed
+  in. Sessions are now **stateless signed tokens** (`<expiry>.<HMAC-SHA256>` keyed
+  by the persistent vault key), validated with no server-side store, so a session
+  survives restarts and works across replicas. Tampered/expired tokens are
+  rejected; logout clears the cookie (tokens self-expire at their 12h TTL).
+
 ## [2.0.10] — 2026-07-05
 
 ### Added
@@ -256,6 +268,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.11]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.11
 [2.0.10]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.10
 [2.0.9]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.9
 [2.0.8]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.8

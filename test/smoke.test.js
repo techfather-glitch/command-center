@@ -20,7 +20,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const cc = require('../server.js');
 
-const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, SECRET_FIELDS } = cc;
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, SECRET_FIELDS, signSession, hasSession } = cc;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
@@ -301,6 +301,21 @@ test('SECRET_FIELDS covers every credential field name in the registry', () => {
   assert.deepEqual([...missing], [], 'credential fields not vaulted (would leak to plaintext settings): ' + [...missing].join(', '));
   // Dropped Needle stores a session token set outside the auth descriptor.
   assert.ok(SECRET_FIELDS.has('sessionToken'), 'sessionToken must be vaulted');
+});
+
+// ── 6a2. stateless session tokens: validate, survive "restart", reject forgery ──
+// Sessions are signed (HMAC) not stored in memory, so they must validate purely
+// from the token + key — which is what lets them survive a container restart.
+test('signed session token validates, and forged/expired ones are rejected', () => {
+  const req = (h) => ({ headers: { cookie: h } });
+  const good = signSession(Date.now() + 3600e3);
+  assert.equal(hasSession(req('cc_session=' + good)), true, 'a freshly signed token is accepted');
+  assert.equal(hasSession(req('cc_session=' + good)), true, 're-validation (a "restart") still accepts it — no in-memory store');
+  const [exp, sig] = good.split('.');
+  assert.equal(hasSession(req('cc_session=' + exp + '.' + 'x'.repeat(sig.length))), false, 'a forged signature is rejected');
+  assert.equal(hasSession(req('cc_session=' + (Date.now() - 1000) + '.' + sig)), false, 'an expired token is rejected');
+  assert.equal(hasSession(req('cc_session=garbage')), false, 'a malformed token is rejected');
+  assert.equal(hasSession(req('')), false, 'no cookie -> no session');
 });
 
 // ── 6b. session cookie: Secure tracks the real transport, not PUBLIC_URL ───

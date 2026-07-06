@@ -1873,8 +1873,16 @@ function rateLimited(ip) {
 // container secrets) OR be set once during first-run setup (stored as a SHA-256
 // hash in the encrypted vault). Both are honored; env wins if both are present.
 // Auth is entirely optional — if neither is set, the dashboard is open.
-const _sessions = new Map();   // token -> expiry ms
 const SESSION_TTL_MS = 12 * 3600 * 1000;
+// Sessions are STATELESS: the cookie is `<expiryMs>.<HMAC-SHA256(vaultKey, expiry)>`,
+// validated by re-signing — there is no in-memory session store. So a session
+// survives a container restart (and works across multiple replicas) instead of
+// being wiped on every restart, which otherwise reads as an endless login loop.
+// The HMAC key is the persistent secret-vault key (stable across restarts).
+const _sessionKey = dashboardSecretKey();
+function signSession(exp) {
+    return String(exp) + '.' + crypto.createHmac('sha256', _sessionKey).update('cc-session|' + String(exp)).digest('base64url');
+}
 function sha256hex(s) { return crypto.createHash('sha256').update(String(s)).digest('hex'); }
 // Password hashing uses Node's built-in scrypt — a slow, memory-hard, salted KDF
 // (no invented crypto, no dependency). Stored as a self-describing string
@@ -1914,19 +1922,20 @@ function setVaultAuthPassword(pw) {
     writeSecretVault(v);
 }
 function issueSession(req, res, extra) {
-    const tok = crypto.randomBytes(32).toString('hex');
-    _sessions.set(tok, Date.now() + SESSION_TTL_MS);
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(req, 'cc_session', tok, SESSION_TTL_MS / 1000) });
+    const exp = Date.now() + SESSION_TTL_MS;
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': sessionCookie(req, 'cc_session', signSession(exp), SESSION_TTL_MS / 1000) });
     res.end(JSON.stringify(Object.assign({ ok: true }, extra || {})));
 }
 function parseCookies(req) { const out = {}; String(req.headers.cookie || '').split(';').forEach(p => { const i = p.indexOf('='); if (i > 0) out[p.slice(0, i).trim()] = p.slice(i + 1).trim(); }); return out; }
 function hasSession(req) {
     const tok = parseCookies(req).cc_session || '';
-    if (!tok) return false;
-    const exp = _sessions.get(tok);
-    if (exp && exp > Date.now()) return true;
-    _sessions.delete(tok);
-    return false;
+    const dot = tok.indexOf('.');
+    if (dot < 1) return false;
+    const exp = Number(tok.slice(0, dot));
+    if (!Number.isFinite(exp) || exp <= Date.now()) return false;
+    const expected = signSession(exp);
+    if (tok.length !== expected.length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(tok), Buffer.from(expected)); } catch (e) { return false; }
 }
 function timingSafeMatch(a, b) {
     // Hash both sides so lengths are equal, then constant-time compare.
@@ -2295,8 +2304,8 @@ const server = http.createServer(async (req, res) => {
             return;
         }
         if (req.url === '/api/logout' && req.method === 'POST') {
-            const tok = parseCookies(req).cc_session || '';
-            if (tok) _sessions.delete(tok);
+            // Stateless tokens can't be revoked server-side; clearing the cookie
+            // logs this browser out (the token self-expires at its 12h TTL).
             auditLog(req, 'auth.logout', '', 'ok');
             res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': `cc_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` });
             res.end(JSON.stringify({ ok: true }));
@@ -2322,9 +2331,7 @@ const server = http.createServer(async (req, res) => {
         if (pw && pw.length < 12) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'password must be at least 12 characters' })); return; }
         setVaultAuthPassword(pw || '');
         auditLog(req, 'auth.set-password', '', pw ? 'set' : 'cleared');
-        // Rotate: invalidate the caller's prior session token before issuing a fresh one.
-        const oldTok = parseCookies(req).cc_session || ''; if (oldTok) _sessions.delete(oldTok);
-        if (pw) { issueSession(req, res, { enabled: true }); return; }   // keep the user signed in with a new token
+        if (pw) { issueSession(req, res, { enabled: true }); return; }   // issue a fresh session token for the new password
         res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, enabled: false }));
         return;
     }
@@ -3165,4 +3172,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession };
