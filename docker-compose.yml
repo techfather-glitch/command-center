@@ -30,5 +30,9 @@ services:
       # - COOKIE_SECURE=0
       # Full per-request access log to the container log (verbose) — for debugging:
       # - LOG_REQUESTS=1
+      # UniFi / TrueNAS / Proxmox on the LAN use self-signed certificates, which
+      # fail outbound TLS verification (on by default) and block their logins.
+      # Uncomment to accept self-signed upstreams (or use NODE_EXTRA_CA_CERTS):
+      # - ALLOW_INSECURE_TLS=1
       # - DEMO=1                    # uncomment to explore with fully synthetic data
     restart: unless-stopped
