@@ -4,6 +4,23 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.12] — 2026-07-05
+
+### Fixed
+- **A misconfigured provider could bounce a logged-in user to the lock screen.**
+  The provider proxies (`/api/live`, `/api/widget`) relay the upstream service's
+  HTTP status — and the client treated *any* 401 as "session expired". So one
+  provider with a bad/stale credential (easy right after an import) answered 401
+  and the dashboard threw up the sign-in screen even though the session was
+  valid, looking exactly like a login loop. Real session rejections are now
+  marked with a `WWW-Authenticate: CC-Session` header and the client only shows
+  the lock screen for those; provider 401s surface as provider errors on their
+  tiles.
+- **Fonts and bundled icons were missing from the Docker image** —
+  `.dockerignore` excluded `assets/fonts` and `assets/icons`, so containers
+  404'd the self-hosted Inter/Geist fonts (falling back to system fonts) and
+  bundled icons like Dropped Needle's. The image now ships them.
+
 ## [2.0.11] — 2026-07-05
 
 ### Fixed
@@ -268,6 +285,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.12]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.12
 [2.0.11]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.11
 [2.0.10]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.10
 [2.0.9]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.9

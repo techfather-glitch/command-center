@@ -2316,7 +2316,11 @@ const server = http.createServer(async (req, res) => {
         const open = req.url === '/api/stream' || req.url === '/api/meta';
         if (req.url.startsWith('/api/') && !open && !hasSession(req)) {
             log401(req.url, !!parseCookies(req).cc_session);
-            res.writeHead(401, { 'Content-Type': 'application/json' });
+            // WWW-Authenticate marks this as a SESSION 401. Provider proxies
+            // (/api/live, /api/widget) relay upstream 401s without it — the client
+            // only shows the lock screen when this header is present, so a
+            // misconfigured provider can no longer masquerade as a logged-out user.
+            res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'CC-Session' });
             res.end(JSON.stringify({ error: 'authentication required', login: '/api/login' }));
             return;
         }
@@ -2324,7 +2328,7 @@ const server = http.createServer(async (req, res) => {
     // ── first-run setup: set (or clear) the optional dashboard password ──
     // Open while no auth exists yet (first run); requires a session once auth is on.
     if (req.url === '/api/setup/password' && req.method === 'POST') {
-        if (authEnabled() && !hasSession(req)) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: 'authentication required' })); return; }
+        if (authEnabled() && !hasSession(req)) { res.writeHead(401, { 'Content-Type': 'application/json', 'WWW-Authenticate': 'CC-Session' }); res.end(JSON.stringify({ error: 'authentication required' })); return; }
         if (authPasswordFromEnv()) { res.writeHead(409, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'password is managed by DASHBOARD_PASSWORD in the environment' })); return; }
         const body = await readJsonBody(req).catch(() => ({}));
         const pw = String((body && body.password) || '');
