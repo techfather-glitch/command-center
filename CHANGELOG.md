@@ -4,6 +4,17 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.7] — 2026-07-05
+
+### Fixed
+- **Login loop behind an authenticating reverse proxy** (Pangolin, Authelia,
+  Authentik, etc.). The session cookie was `SameSite=Strict`, so when the user
+  reached the dashboard via the proxy's cross-site auth redirect the browser
+  withheld the cookie on that navigation — the session never stuck and the lock
+  screen reappeared on every attempt. The cookie is now `SameSite=Lax`, which
+  keeps the session across that redirect while still omitting it on cross-site
+  sub-requests/POSTs (CSRF stays closed via the same-origin Origin/Referer gate).
+
 ## [2.0.6] — 2026-07-05
 
 ### Fixed
@@ -212,6 +223,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.7]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.7
 [2.0.6]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.6
 [2.0.5]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.5
 [2.0.4]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.4

@@ -312,7 +312,7 @@ test('sessionCookie is HttpOnly + SameSite=Strict, and Secure only over TLS', ()
   const http = sessionCookie({ headers: {}, socket: {} }, 'cc_session', 'tok', 3600);
   assert.match(http, /cc_session=tok/);
   assert.match(http, /HttpOnly/);
-  assert.match(http, /SameSite=Strict/);
+  assert.match(http, /SameSite=Lax/);   // Lax so an auth reverse-proxy's cross-site redirect keeps the session
   assert.doesNotMatch(http, /Secure/, 'a cookie returned over http:// must NOT be Secure (else it is dropped)');
 
   const viaProxy = sessionCookie({ headers: { 'x-forwarded-proto': 'https' }, socket: {} }, 'cc_session', 'tok', 3600);

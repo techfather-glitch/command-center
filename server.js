@@ -1984,11 +1984,16 @@ function reqIsTls(req) {
 function isSecureRequest(req) { return reqIsTls(req); }
 function publicOrigin(req) { return PUBLIC_URL || `${reqScheme(req)}://${reqHost(req)}`; }
 // Build a Set-Cookie that upgrades to Secure automatically behind TLS.
-// SameSite=Strict: the dashboard has no cross-site entry flow, so the cookie is
-// never sent on a cross-origin request — closing the residual CSRF surface.
+// SameSite=Lax (not Strict): behind an authenticating reverse proxy (Pangolin,
+// Authelia, Authentik…) the user reaches the dashboard via a cross-site redirect
+// from the proxy's own login domain. Strict withholds the session cookie on that
+// top-level navigation, so the session never "sticks" and login loops forever.
+// Lax still omits the cookie on cross-site sub-requests and POSTs, and CSRF is
+// independently closed by the same-origin Origin/Referer gate — so relaxing to
+// Lax fixes the proxy loop without widening the CSRF surface.
 function sessionCookie(req, name, value, maxAgeSec) {
     const secure = isSecureRequest(req) ? '; Secure' : '';
-    return `${name}=${value}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAgeSec}${secure}`;
+    return `${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}${secure}`;
 }
 // Security/hardening headers for the HTML document + static responses. CSP allows
 // 'unsafe-inline' for now (app.html inlines its scripts/handlers); everything else
@@ -2256,7 +2261,7 @@ const server = http.createServer(async (req, res) => {
             const tok = parseCookies(req).cc_session || '';
             if (tok) _sessions.delete(tok);
             auditLog(req, 'auth.logout', '', 'ok');
-            res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': `cc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0` });
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Set-Cookie': `cc_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` });
             res.end(JSON.stringify({ ok: true }));
             return;
         }
