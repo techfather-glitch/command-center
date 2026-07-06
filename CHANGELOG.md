@@ -4,6 +4,20 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.13] — 2026-07-05
+
+### Fixed
+- **`docker stop` no longer force-kills the container (exit 137).** Node runs as
+  PID 1 in the container and gets no default signal handling, so every stop or
+  update sat through Docker's 10s grace period and ended in SIGKILL. SIGTERM /
+  SIGINT are now handled for a prompt, clean shutdown.
+
+### Added
+- The `LOG_REQUESTS=1` access log now **names the provider** on proxy calls —
+  `POST /api/live (Sonarr) -> 502`, `POST /api/widget (truenasscale) -> 401` —
+  so a failing provider is identifiable at a glance instead of an anonymous
+  status code.
+
 ## [2.0.12] — 2026-07-05
 
 ### Fixed
@@ -285,6 +299,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.13]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.13
 [2.0.12]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.12
 [2.0.11]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.11
 [2.0.10]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.10

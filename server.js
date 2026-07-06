@@ -2256,7 +2256,8 @@ const server = http.createServer(async (req, res) => {
             try {
                 const sent = parseCookies(req).cc_session ? 'sent' : 'none';
                 const set = res.getHeader('Set-Cookie') ? ' set-cookie=yes' : '';
-                console.log(`[req] ${req.method} ${req.url} -> ${res.statusCode} ${Date.now() - _t0}ms cc_session=${sent}${set}`);
+                const extra = req._logExtra ? ` (${req._logExtra})` : '';   // e.g. which provider a /api/live or /api/widget call was for
+                console.log(`[req] ${req.method} ${req.url}${extra} -> ${res.statusCode} ${Date.now() - _t0}ms cc_session=${sent}${set}`);
             } catch (e) {}
         });
     }
@@ -2718,6 +2719,7 @@ const server = http.createServer(async (req, res) => {
     } else if (req.url === '/api/widget' && req.method === 'POST') {
         try {
             const payload = await readJsonBody(req);
+            req._logExtra = (payload && payload.type) || '?';   // name the provider in the request log
             const def = INTEGRATIONS[payload && payload.type];
             if (!def) { jsonRes(res, 404, { ok: false, error: 'unknown integration' }); return; }
             const settings = readDashboardSettings();
@@ -3020,6 +3022,7 @@ const server = http.createServer(async (req, res) => {
         // exfiltration pivot (CWE-918) and are no longer honoured.
         const payload = await readJsonBody(req);
         const svc = payload.service;
+        req._logExtra = svc || '?';   // name the probed service in the request log
         const key = (!payload.key || isSecretPlaceholder(payload.key)) ? storedCredential(svc, 'key') : payload.key;
         const override = storedEndpoint(svc) || '';
         if (svc === 'Qbt') {
@@ -3164,6 +3167,17 @@ if (require.main === module) {
         console.log(`   logging: request log ${LOG_REQUESTS ? 'ON (LOG_REQUESTS=1) — one [req] line per request' : 'off — set LOG_REQUESTS=1 for a full access log'}`);
         if (_envAuthTarget && !PUBLIC_URL) console.log(`   hint:    behind an https proxy, set PUBLIC_URL so cookies/links match; if sign-in loops, set COOKIE_SECURE=0`);
     });
+
+    // Graceful shutdown. In a container node runs as PID 1, which gets NO default
+    // signal handling — without this, `docker stop` waits out its 10s grace period
+    // and SIGKILLs (exit 137) on every stop/update. Exit promptly and cleanly.
+    for (const sig of ['SIGTERM', 'SIGINT']) {
+        process.on(sig, () => {
+            console.log(`received ${sig} — shutting down`);
+            try { server.close(() => process.exit(0)); } catch (e) { process.exit(0); }
+            setTimeout(() => process.exit(0), 3000).unref();   // don't wait on open SSE streams
+        });
+    }
 
     // Continuously sample WAN throughput in the background so the dashboard
     // sparkline is already populated on first paint (reuses the cached session).
