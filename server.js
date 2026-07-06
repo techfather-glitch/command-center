@@ -2234,7 +2234,23 @@ async function demoRoute(req, res) {
     return false;   // everything else (settings, static UI, meta) uses the real handler
 }
 
+const LOG_REQUESTS = /^(1|true|on|yes)$/i.test((process.env.LOG_REQUESTS || '').trim());
 const server = http.createServer(async (req, res) => {
+    // Opt-in access log (LOG_REQUESTS=1): one line per request — method, path,
+    // status, timing, whether a session cookie rode along, and whether the
+    // response issued one. Enough to watch a login/session problem unfold request
+    // by request (e.g. `POST /api/login -> 200 set-cookie=yes` then a bounced
+    // `GET /api/status -> 401 cc_session=sent` means the browser kept the old cookie).
+    if (LOG_REQUESTS) {
+        const _t0 = Date.now();
+        res.on('finish', () => {
+            try {
+                const sent = parseCookies(req).cc_session ? 'sent' : 'none';
+                const set = res.getHeader('Set-Cookie') ? ' set-cookie=yes' : '';
+                console.log(`[req] ${req.method} ${req.url} -> ${res.statusCode} ${Date.now() - _t0}ms cc_session=${sent}${set}`);
+            } catch (e) {}
+        });
+    }
     // ── gate 1: rate limit (loopback exempt so local tooling can't lock itself out) ──
     const clientIp = (req.socket && req.socket.remoteAddress) || '';
     if (!/^(::1$|127\.|::ffff:127\.)/.test(clientIp) && rateLimited(clientIp)) {
@@ -3134,6 +3150,7 @@ if (require.main === module) {
         const cs = String(process.env.COOKIE_SECURE || '').trim() || 'auto (follows request scheme)';
         console.log(`   sign-in: ${authMode}`);
         console.log(`   proxy:   TRUST_PROXY=${TRUST_PROXY ? 'on' : 'off'}  PUBLIC_URL=${PUBLIC_URL || '(none)'}  COOKIE_SECURE=${cs}`);
+        console.log(`   logging: request log ${LOG_REQUESTS ? 'ON (LOG_REQUESTS=1) — one [req] line per request' : 'off — set LOG_REQUESTS=1 for a full access log'}`);
         if (_envAuthTarget && !PUBLIC_URL) console.log(`   hint:    behind an https proxy, set PUBLIC_URL so cookies/links match; if sign-in loops, set COOKIE_SECURE=0`);
     });
 

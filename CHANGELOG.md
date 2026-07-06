@@ -4,6 +4,16 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.10] — 2026-07-05
+
+### Added
+- **`LOG_REQUESTS=1` — full per-request access log.** One line per request with
+  method, path, status, timing, and whether a session cookie was sent — so a
+  login/session problem is visible request by request (e.g. `POST /api/login ->
+  200` followed by a bounced `GET /api/status -> 401 cc_session=sent` shows the
+  browser is replaying an old cookie). Off by default; the startup summary shows
+  its state.
+
 ## [2.0.9] — 2026-07-05
 
 ### Added
@@ -246,6 +256,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.10]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.10
 [2.0.9]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.9
 [2.0.8]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.8
 [2.0.7]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.7

@@ -28,5 +28,7 @@ services:
       # If sign-in loops (password accepted, bounces back) behind a proxy, the
       # browser is dropping the Secure session cookie — set this to 0:
       # - COOKIE_SECURE=0
+      # Full per-request access log to the container log (verbose) — for debugging:
+      # - LOG_REQUESTS=1
       # - DEMO=1                    # uncomment to explore with fully synthetic data
     restart: unless-stopped
