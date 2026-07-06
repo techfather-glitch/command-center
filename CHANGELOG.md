@@ -4,6 +4,21 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.15] — 2026-07-06
+
+### Added
+- **One add, everywhere.** Enabling a provider with a configured URL now puts it
+  on the fleet automatically — health dot on Home, status sweeps, the works — no
+  second manual add in Fleet & probes. Deduped against existing services by
+  host:port; hosted APIs (no endpoint) are excluded; hideable by name like any
+  service.
+
+### Fixed
+- The import review no longer renders native-service credentials (e.g.
+  `Sonarr-Anime`) as confusing amber "URL required" rows — fleet services and
+  their credentials ride along as-is (they carry their own addresses) and are
+  summarized in the header instead.
+
 ## [2.0.14] — 2026-07-06
 
 ### Fixed
@@ -325,6 +340,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.15]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.15
 [2.0.14]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.14
 [2.0.13]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.13
 [2.0.12]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.12

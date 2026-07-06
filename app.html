@@ -5918,7 +5918,11 @@ window.importSettings = async function (input) {
 };
 function openImportReview(filename) {
     const obj = _importObj || {};
-    const ids = importIds(obj);
+    // Review rows are for PROVIDERS (catalog integrations / things with a URL to
+    // check). Credentials for native fleet services (apiKeys under service names
+    // like "Sonarr-Anime") and customServices ride along silently — they carry
+    // their own addresses and are vaulted/saved as-is.
+    const ids = importIds(obj).filter(id => (Store.integrations || []).some(d => d.id === id) || (obj.endpoints && obj.endpoints[id]));
     const rowFor = (id) => {
         const def = (Store.integrations || []).find(d => d.id === id);
         const title = def ? def.title : id;
@@ -5935,7 +5939,10 @@ function openImportReview(filename) {
     if (obj.dockerHost !== undefined) special += `<div class="imp-row"><div class="imp-head"><span class="imp-name">Docker host</span></div><input class="set-input imp-url" data-docker="1" value="${esc(obj.dockerHost || '')}" placeholder="http://host:2375"></div>`;
     if (obj.unifi) special += `<div class="imp-row"><div class="imp-head"><span class="imp-name">UniFi</span>${(obj.unifi.username || obj.unifi.password) ? '<span class="imp-badge ok">login ✓</span>' : ''}</div><input class="set-input imp-url" data-uni="1" value="${esc(obj.unifi.url || '')}" placeholder="https://192.168.1.1"></div>`;
     const n = ids.length + (obj.unifi ? 1 : 0) + (obj.dockerHost !== undefined ? 1 : 0);
-    const body = `<div class="set-desc" style="margin-bottom:12px">From <b>${esc(filename)}</b> — <b>${n}</b> provider${n === 1 ? '' : 's'}. Any keys in the file are encrypted into the vault on save; secrets already set here are kept. Review each URL — change any that differ on this instance — then apply. Amber rows have a key but need a URL.</div>
+    const nFleet = Array.isArray(obj.customServices) ? obj.customServices.length : 0;
+    const nKeys = Object.keys(obj.apiKeys || {}).filter(k => !ids.includes(k)).length;
+    const extras = [nFleet ? `<b>${nFleet}</b> fleet service${nFleet === 1 ? '' : 's'} (with their addresses)` : '', nKeys ? `<b>${nKeys}</b> service credential${nKeys === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+    const body = `<div class="set-desc" style="margin-bottom:12px">From <b>${esc(filename)}</b> — <b>${n}</b> provider${n === 1 ? '' : 's'}${extras ? `, plus ${extras} imported as-is` : ''}. Any keys in the file are encrypted into the vault on save; secrets already set here are kept. Review each URL — change any that differ on this instance — then apply. Amber rows have a key but need a URL.</div>
         <div class="imp-list">${special}${ids.map(rowFor).join('')}</div>`;
     openDrawer('Import configuration', 'review &amp; apply', body, `<button class="tbtn" onclick="closeDrawer()">Cancel</button><button class="tbtn primary" onclick="applyImport()">Apply import</button>`);
 }

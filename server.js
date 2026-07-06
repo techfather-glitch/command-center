@@ -691,10 +691,31 @@ function visibleServices() {
             authHeader: String(svc.authHeader || ''),
             probePath: String(svc.probePath || '/')
         }));
-    return [
+    const out = [
         ...services.filter(svc => !hidden.has(svc.name)),
         ...normalizedCustom.filter(svc => !hidden.has(svc.name))
     ];
+    // One add, everywhere: an ENABLED integration with a configured URL joins
+    // the fleet automatically (health dot on Home, status sweeps) — no second
+    // manual add in Fleet & probes. Skipped when an existing service already
+    // covers that host:port, and hideable by name like any other service.
+    const covered = new Set(out.map(s => `${s.host}:${s.port}`));
+    for (const [id, cfg] of Object.entries(settings.integrations || {})) {
+        if (!cfg || !cfg.enabled) continue;
+        const def = INTEGRATIONS[id];
+        if (!def) continue;
+        const ep = storedEndpoint(id);
+        if (!ep) continue;
+        try {
+            const u = new URL(ep);
+            const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+            if (covered.has(`${u.hostname}:${port}`)) continue;
+            if (hidden.has(def.title)) continue;
+            covered.add(`${u.hostname}:${port}`);
+            out.push({ name: def.title, host: u.hostname, port, type: def.category || 'Integration', url: ep, authHeader: '', probePath: '/' });
+        } catch (e) { /* unparseable URL — skip */ }
+    }
+    return out;
 }
 
 // Where should a native probe for `svcName` actually connect?
