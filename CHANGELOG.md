@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.9] — 2026-07-05
+
+### Added
+- **Diagnostic auth logging in the container log.** Startup now prints whether
+  sign-in is on (and whether it comes from `DASHBOARD_PASSWORD` or a UI-set
+  password), plus the effective `TRUST_PROXY`, `PUBLIC_URL` and `COOKIE_SECURE`.
+  Each login logs its result, the detected request scheme, and whether the
+  session cookie is issued `Secure`. And a rejected request logs the decisive
+  detail for a login loop — whether the browser sent the session cookie back at
+  all (*"was NOT sent — it dropped it; try COOKIE_SECURE=0"*) or sent an invalid
+  one (*"did the container restart?"*), throttled to one line every 4s. No
+  secrets are ever logged.
+
 ## [2.0.8] — 2026-07-05
 
 ### Added
@@ -233,6 +246,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.9]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.9
 [2.0.8]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.8
 [2.0.7]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.7
 [2.0.6]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.6

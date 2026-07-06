@@ -2006,6 +2006,15 @@ function sessionCookie(req, name, value, maxAgeSec) {
     const secure = cookieSecure(req) ? '; Secure' : '';
     return `${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}${secure}`;
 }
+// Diagnostic (throttled to one line / 4s): a protected request was rejected for
+// lack of a session. THE tell for a login loop — was the cookie even sent back?
+let _last401Log = 0;
+function log401(url, hadCookie) {
+    const now = Date.now();
+    if (now - _last401Log < 4000) return;
+    _last401Log = now;
+    console.log(`[auth] 401 ${url} — cc_session cookie ${hadCookie ? 'WAS sent but is not a valid session (did the container restart, or the token expire?)' : 'was NOT sent back by the browser — it dropped it; behind a proxy, try COOKIE_SECURE=0'}`);
+}
 // Security/hardening headers for the HTML document + static responses. CSP allows
 // 'unsafe-inline' for now (app.html inlines its scripts/handlers); everything else
 // is same-origin. Images allow data: (inline SVG fallbacks) and https: (proxied).
@@ -2262,6 +2271,7 @@ const server = http.createServer(async (req, res) => {
             const target = authTarget();
             const ok = verifyPassword(pw, target);
             auditLog(req, 'auth.login', '', ok ? 'ok' : 'denied');
+            console.log(`[auth] login ${ok ? 'OK' : 'DENIED'} — source=${_envAuthTarget ? 'env DASHBOARD_PASSWORD' : 'password set in UI'}, scheme=${reqScheme(req)} (x-forwarded-proto=${req.headers['x-forwarded-proto'] || 'none'}), host=${reqHost(req)}, issuing cookie Secure=${cookieSecure(req) ? 'yes' : 'no'}`);
             if (!ok) { res.writeHead(401, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid password' })); return; }
             // Transparently upgrade a legacy sha256 vault hash to scrypt on success.
             if (!_envAuthTarget && /^[0-9a-f]{64}$/i.test(String(target))) { try { setVaultAuthPassword(pw); } catch (e) {} }
@@ -2280,6 +2290,7 @@ const server = http.createServer(async (req, res) => {
         //   /api/login (above), /api/stream handshake, /api/meta (liveness).
         const open = req.url === '/api/stream' || req.url === '/api/meta';
         if (req.url.startsWith('/api/') && !open && !hasSession(req)) {
+            log401(req.url, !!parseCookies(req).cc_session);
             res.writeHead(401, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'authentication required', login: '/api/login' }));
             return;
@@ -3117,6 +3128,13 @@ if (require.main === module) {
         // any reverse proxy. Show the real external URL when PUBLIC_URL is set so
         // a container log never looks like it's stuck on localhost.
         console.log(`🐉 Command Center listening on 0.0.0.0:${PORT}${PUBLIC_URL ? ` — ${PUBLIC_URL}` : ` — http://localhost:${PORT}/`}`);
+        // Print the access-relevant config so a glance at the logs answers "is
+        // sign-in on, and how?" and "what will the session cookie look like?".
+        const authMode = _envAuthTarget ? 'ON — env DASHBOARD_PASSWORD' : (storedAuthTarget() ? 'ON — password set in the UI' : 'OFF — no sign-in (open on the network)');
+        const cs = String(process.env.COOKIE_SECURE || '').trim() || 'auto (follows request scheme)';
+        console.log(`   sign-in: ${authMode}`);
+        console.log(`   proxy:   TRUST_PROXY=${TRUST_PROXY ? 'on' : 'off'}  PUBLIC_URL=${PUBLIC_URL || '(none)'}  COOKIE_SECURE=${cs}`);
+        if (_envAuthTarget && !PUBLIC_URL) console.log(`   hint:    behind an https proxy, set PUBLIC_URL so cookies/links match; if sign-in loops, set COOKIE_SECURE=0`);
     });
 
     // Continuously sample WAN throughput in the background so the dashboard
