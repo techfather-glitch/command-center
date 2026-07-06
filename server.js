@@ -274,11 +274,17 @@ function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cooki
         };
         if (cookies) headers.Cookie = cookies;
         if (payload) headers['Content-Length'] = Buffer.byteLength(payload);
+        // UniFi controllers ship with a self-signed certificate, so strict TLS
+        // verification would break virtually every real controller out of the
+        // box (and no env knob should be required for the flagship integration).
+        // Self-signed is accepted by DEFAULT here; set `unifi.strictTls: true`
+        // in settings to enforce verification (e.g. a controller with a real cert).
+        const strict = (() => { try { return readDashboardSettings().unifi && readDashboardSettings().unifi.strictTls === true; } catch (e) { return false; } })();
         const options = {
             method,
             headers,
             timeout: 10000,
-            ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: !ALLOW_INSECURE_TLS }) } : {})
+            ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: strict && !ALLOW_INSECURE_TLS }) } : {})
         };
         const req = lib.request(target, options, (r) => {
             let data = '';
@@ -691,6 +697,28 @@ function visibleServices() {
     ];
 }
 
+// Where should a native probe for `svcName` actually connect?
+//   1. an explicit endpoints override (settings.endpoints[name].url),
+//   2. the address the user gave the service in Settings → Fleet & probes
+//      (its url, else http(s)://host:port),
+//   3. the LIVE_PROBES default — but ONLY if it isn't loopback. Inside a
+//      container 127.0.0.1 is the container itself, never the user's service,
+//      so a loopback default means "not configured" (return ''), not a probe
+//      of the wrong machine.
+function isLoopbackUrl(u) { return /^https?:\/\/(127\.(\d+\.){2}\d+|localhost|\[::1\])(:|\/|$)/i.test(String(u || '')); }
+function serviceProbeBase(svcName) {
+    const ep = storedEndpoint(svcName);
+    if (ep) return String(ep).replace(/\/+$/, '');
+    const svc = visibleServices().find(s => s.name === svcName);
+    if (svc) {
+        if (svc.url && /^https?:\/\//i.test(svc.url)) return String(svc.url).replace(/\/+$/, '');
+        if (svc.host && Number(svc.port)) return `${Number(svc.port) === 443 ? 'https' : 'http'}://${svc.host}:${svc.port}`;
+    }
+    const def = (LIVE_PROBES[svcName] || {}).defaultUrl || '';
+    if (def && !isLoopbackUrl(def)) return String(def).replace(/\/+$/, '');
+    return '';
+}
+
 // Perform a single authenticated fetch for a service probe.
 // Handles the different auth schemes (header / query / cookie) per probe.
 function liveFetch({ baseUrl, path, key, probe }) {
@@ -868,7 +896,8 @@ function parseNodeNetworkTotal(raw) {
 
 async function queryNetworkTotal(endpoint) {
     const probe = LIVE_PROBES['Node Exporter'];
-    const baseUrl = (endpoint || probe.defaultUrl).replace(/\/+$/, '');
+    const baseUrl = (endpoint || serviceProbeBase('Node Exporter')).replace(/\/+$/, '');
+    if (!baseUrl) return { total: null, at: Date.now(), configured: false };
     const response = await liveFetch({ baseUrl, path: probe.path, key: '', probe });
     const raw = response.body?.raw || '';
     return {
@@ -1818,7 +1847,8 @@ async function sseSampleStatus() {
 async function sseSampleHost() {
     try {
         const probe = LIVE_PROBES['Node Exporter'];
-        const baseUrl = (storedEndpoint('Node Exporter') || probe.defaultUrl).replace(/\/+$/, '');
+        const baseUrl = serviceProbeBase('Node Exporter');
+        if (!baseUrl) return;   // not configured — never probe a loopback default
         const r = await liveFetch({ baseUrl, path: probe.path, key: '', probe });
         if (r.ok && r.body && r.body.raw) sseBroadcast('host', { raw: r.body.raw, ts: Date.now() });
     } catch (e) { /* skip this tick */ }
@@ -1826,7 +1856,8 @@ async function sseSampleHost() {
 async function sseSampleMedia() {
     try {
         const probe = LIVE_PROBES['Tracearr'];
-        const baseUrl = (storedEndpoint('Tracearr') || probe.defaultUrl).replace(/\/+$/, '');
+        const baseUrl = serviceProbeBase('Tracearr');
+        if (!baseUrl) return;   // not configured — never probe a loopback default
         const r = await queryTracearr(baseUrl, storedCredential('Tracearr', 'key'), probe);
         if (r.status >= 200 && r.status < 300 && r.body) sseBroadcast('media', { body: r.body, ts: Date.now() });
     } catch (e) { /* skip this tick */ }
@@ -2487,6 +2518,25 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message || 'Failed to save settings' }));
         }
+    } else if (req.url === '/api/factory-reset' && req.method === 'POST') {
+        // Wipe ALL persisted state (settings, encrypted vault + its key, audit
+        // journal) and exit — the supervisor (docker restart: unless-stopped /
+        // systemd) brings the process back to a pristine first-run. Session- and
+        // CSRF-gated like every POST; the body must confirm intent explicitly.
+        const body = await readJsonBody(req).catch(() => ({}));
+        if (!body || body.confirm !== 'ERASE') {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: 'confirmation missing' }));
+            return;
+        }
+        auditLog(req, 'factory.reset', '', 'ok');
+        console.log('[reset] factory reset requested — wiping data and restarting');
+        for (const p of [SETTINGS_PATH, SECRETS_PATH, SECRET_KEY_PATH, AUDIT_PATH]) {
+            try { fs.unlinkSync(p); } catch (e) { /* absent is fine */ }
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, restarting: true }));
+        setTimeout(() => process.exit(0), 400);   // supervisor restarts a clean instance
     } else if (req.url === '/api/unifi/status') {
         try {
             const out = await queryUnifiStatus();
@@ -2638,8 +2688,14 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ services: [], error: err.message || 'status sweep failed', timestamp: Date.now() }));
         }
     } else if (req.url === '/api/tracearr/discover') {
-        // Try to discover Tracearr API endpoints
-        const TRACEARR_BASE = 'http://127.0.0.1:30316';
+        // Try to discover Tracearr API endpoints — at the ADDRESS the user gave
+        // the Tracearr service (Fleet & probes / endpoints), never a loopback default.
+        const TRACEARR_BASE = serviceProbeBase('Tracearr');
+        if (!TRACEARR_BASE) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ configured: false, error: 'Tracearr has no address — add it with its host/port in Settings → Fleet & probes' }));
+            return;
+        }
         const pathsToTry = [
             '/api-docs',
             '/api-docs/swagger.json',
@@ -2662,7 +2718,7 @@ const server = http.createServer(async (req, res) => {
         pathsToTry.forEach(path => {
             const url = `${TRACEARR_BASE}${path}`;
             try {
-                const proxyReq = require('http').get(url, {
+                const proxyReq = require(TRACEARR_BASE.startsWith('https:') ? 'https' : 'http').get(url, {
                     headers: { 'Accept': 'application/json' },
                     timeout: 5000
                 }, (proxyRes) => {
@@ -2906,14 +2962,23 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // Resolve against the CONFIGURED Tracearr address; absolute srcs may only
+        // point at that same host (the proxy attaches the Tracearr bearer token).
+        const trBase = serviceProbeBase('Tracearr');
+        if (!trBase) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ configured: false, error: 'Tracearr has no address — add it in Settings → Fleet & probes' }));
+            return;
+        }
         let target;
         try {
+            const baseHost = new URL(trBase).hostname;
             if (/^https?:\/\//i.test(rawSrc)) {
                 target = new URL(rawSrc);
-                if (target.hostname !== '127.0.0.1') throw new Error('blocked external image proxy target');
+                if (target.hostname !== baseHost) throw new Error('blocked external image proxy target');
             } else {
                 const rel = rawSrc.startsWith('/') ? rawSrc : `/${rawSrc}`;
-                target = new URL(rel, 'http://127.0.0.1:30316');
+                target = new URL(rel, trBase);
             }
         } catch (err) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -2948,9 +3013,15 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ error: 'image proxy error', message: err.message }));
         });
     } else if (req.url.startsWith('/api/tracearr/')) {
-        // Proxy Tracearr API requests
+        // Proxy Tracearr API requests — to the CONFIGURED address only.
+        const trProxyBase = serviceProbeBase('Tracearr');
+        if (!trProxyBase) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ configured: false, error: 'Tracearr has no address — add it with its host/port in Settings → Fleet & probes' }));
+            return;
+        }
         const tracearrPath = req.url.replace('/api/tracearr/', '');
-        
+
         // Tracearr public API lives under /api/v1/public/* and requires Bearer auth.
         // Try the public-v1 prefix first to avoid falling through to legacy /api/* routes.
         const possiblePaths = [
@@ -2974,11 +3045,11 @@ const server = http.createServer(async (req, res) => {
             }
             
             const path = possiblePaths[attempts];
-            const TRACEARR_URL = `http://127.0.0.1:30316${path}`;
+            const TRACEARR_URL = `${trProxyBase}${path}`;
             attempts++;
-            
+
             try {
-                const proxyReq = require('http').get(TRACEARR_URL, {
+                const proxyReq = require(trProxyBase.startsWith('https:') ? 'https' : 'http').get(TRACEARR_URL, {
                     headers: {
                         'Accept': 'application/json',
                         ...(storedCredential('Tracearr', 'key') && { 'Authorization': `Bearer ${storedCredential('Tracearr', 'key')}` })
@@ -3035,7 +3106,12 @@ const server = http.createServer(async (req, res) => {
         const built = LIVE_PROBES[svc];
         const custom = null;   // caller-supplied probe descriptors removed (SSRF surface)
         if (svc === 'TrueNAS Web UI') {
-            const endpoint = (override || LIVE_PROBES['TrueNAS Web UI'].defaultUrl).replace(/\/+$/, '');
+            const endpoint = serviceProbeBase('TrueNAS Web UI');
+            if (!endpoint) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ pools: [], configured: false, error: 'TrueNAS has no address — add it with its host/port in Settings → Fleet & probes' }));
+                return;
+            }
             try {
                 const out = await queryTrueNasPools(key, endpoint);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -3060,7 +3136,15 @@ const server = http.createServer(async (req, res) => {
             res.end(JSON.stringify({ error: 'Unknown service' }));
             return;
         }
-        const baseUrl = (override || probe.defaultUrl).replace(/\/+$/, '');
+        // Probe the address the user configured (endpoints override, else the
+        // service's own host/port from Fleet & probes). A loopback default is
+        // "not configured", never a probe of the container itself.
+        const baseUrl = serviceProbeBase(svc);
+        if (!baseUrl) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ configured: false, error: `${svc} has no address — add it with its host/port in Settings → Fleet & probes` }));
+            return;
+        }
         try {
             if (svc === 'Qbt') {
                 const out = await queryQbt(baseUrl, payload.qbt || {});
@@ -3190,4 +3274,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl };

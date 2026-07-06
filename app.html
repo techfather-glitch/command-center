@@ -5939,6 +5939,23 @@ function openImportReview(filename) {
         <div class="imp-list">${special}${ids.map(rowFor).join('')}</div>`;
     openDrawer('Import configuration', 'review &amp; apply', body, `<button class="tbtn" onclick="closeDrawer()">Cancel</button><button class="tbtn primary" onclick="applyImport()">Apply import</button>`);
 }
+window.factoryReset = async function () {
+    const typed = window.prompt('This erases ALL Command Center data on the server — providers, keys, vault, layout — and restarts into first-run setup.\n\nType ERASE to confirm:');
+    if (typed !== 'ERASE') { if (typed !== null) toast('Not erased — confirmation did not match.'); return; }
+    try {
+        const r = await jpost('/api/factory-reset', { confirm: 'ERASE' });
+        if (!r || r.ok !== true) throw new Error((r && r.error) || 'reset rejected');
+        toast('Erased — restarting fresh…');
+        // The server exits and the supervisor restarts it; poll until it's back.
+        const t0 = Date.now();
+        const wait = async () => {
+            if (Date.now() - t0 > 60000) { location.reload(); return; }
+            try { const m = await fetch('/api/meta', { cache: 'no-store' }); if (m.ok) { location.reload(); return; } } catch (e) {}
+            setTimeout(wait, 1200);
+        };
+        setTimeout(wait, 1500);
+    } catch (e) { toast('Reset failed: ' + e.message); }
+};
 window.applyImport = async function () {
     const obj = _importObj; if (!obj) { closeDrawer(); return; }
     document.querySelectorAll('.imp-url').forEach(inp => {
@@ -5964,6 +5981,9 @@ function settingsData() {
             <div class="set-desc" style="margin-top:8px"><b>Safe</b> redacts secrets (<code>***</code>) — fine to share. <b>Full backup</b> includes your keys &amp; passwords in plaintext — use it to move to a new instance, then delete it.${lastExp ? ' · Last export ' + fmtAgo(lastExp) : ''}</div></div>
         <div class="card"><div class="card-title">Import configuration</div><div class="set-desc" style="margin-bottom:10px">Load an export or migration file. You'll review each provider's URL before anything saves; keys in the file are encrypted into the vault, and secrets already set here are kept.</div><label class="tbtn primary" style="display:inline-block;cursor:pointer">Choose file…<input type="file" accept="application/json" style="display:none" onchange="importSettings(this)"></label></div>
     </div>
+    <div class="card" style="margin-top:14px;border-color:color-mix(in srgb,var(--crit,#f43f5e) 35%,transparent)"><div class="card-title">Start over</div>
+        <div class="set-desc" style="margin-bottom:10px">Erase <b>everything</b> — providers, endpoints, the encrypted vault and its key, tiles, the audit journal — and restart into first-run setup. A password set via <code>DASHBOARD_PASSWORD</code> in the environment stays (it lives outside the data).</div>
+        <button class="tbtn" style="border-color:color-mix(in srgb,var(--crit,#f43f5e) 55%,transparent);color:var(--crit,#f43f5e)" onclick="factoryReset()">Erase all data &amp; start fresh…</button></div>
     <div class="card" style="margin-top:14px"><div class="card-title">On-disk data <span class="sub">measured on the server</span></div>
         <div class="insp-row"><span class="insp-k">Icon cache</span><span class="insp-v">${meta.iconCache != null ? meta.iconCache + ' icons · self-hosted' : '—'}</span></div>
         <div class="insp-row"><span class="insp-k">Audit journal</span><span class="insp-v">${meta.auditLogBytes != null ? fmtBytes(meta.auditLogBytes) : '—'}</span></div>

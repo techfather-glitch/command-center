@@ -4,6 +4,32 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.14] — 2026-07-06
+
+### Fixed
+- **Native probes no longer default to `127.0.0.1` — the address you give a
+  service is the address that gets probed.** Fleet probes (Tracearr, Node
+  Exporter, TrueNAS, SABnzbd, qBittorrent, the *Arrs…) resolved their target as
+  `endpoints override → hardcoded 127.0.0.1 default`, ignoring the host/port the
+  user typed in Settings → Fleet & probes — inside a container that probed the
+  container itself, so these services could never work and could not be pointed
+  anywhere else. Resolution is now `endpoints override → the service's own
+  URL/host/port → non-loopback default`, and a loopback default reads as **"not
+  configured"** with a clear message instead of a bogus probe. The Tracearr
+  proxy, image proxy and discover routes (three more hardcoded `127.0.0.1:30316`
+  spots) follow the configured address too, including https.
+- **UniFi works out of the box again** — controllers ship self-signed
+  certificates, and strict outbound TLS verification blocked every login unless
+  a global `ALLOW_INSECURE_TLS` env was set. The UniFi connector now accepts
+  self-signed certs by default; set `unifi.strictTls: true` in settings to
+  enforce verification for a controller with a real certificate.
+
+### Added
+- **Factory reset** (Settings → Data → "Start over") — erases all persisted
+  state (settings, encrypted vault + key, audit journal) after typed
+  confirmation and restarts into first-run setup. Also available as
+  `POST /api/factory-reset` with `{"confirm":"ERASE"}`.
+
 ## [2.0.13] — 2026-07-05
 
 ### Fixed
@@ -299,6 +325,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.14]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.14
 [2.0.13]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.13
 [2.0.12]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.12
 [2.0.11]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.11

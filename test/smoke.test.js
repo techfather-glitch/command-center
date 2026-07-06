@@ -20,7 +20,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const cc = require('../server.js');
 
-const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, SECRET_FIELDS, signSession, hasSession } = cc;
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl } = cc;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
@@ -301,6 +301,32 @@ test('SECRET_FIELDS covers every credential field name in the registry', () => {
   assert.deepEqual([...missing], [], 'credential fields not vaulted (would leak to plaintext settings): ' + [...missing].join(', '));
   // Dropped Needle stores a session token set outside the auth descriptor.
   assert.ok(SECRET_FIELDS.has('sessionToken'), 'sessionToken must be vaulted');
+});
+
+// ── 5b. native probes never target a loopback default ──────────────────────
+// Inside a container 127.0.0.1 is the container itself — a loopback default must
+// read as "not configured" (''), and the address the user gives a fleet service
+// must be the address that gets probed.
+test('serviceProbeBase: loopback defaults are "not configured", user addresses win', () => {
+  const fs = require('node:fs');
+  const sPath = path.join(process.env.DATA_DIR, 'dashboard-settings.json');
+  assert.equal(isLoopbackUrl('http://127.0.0.1:30316'), true);
+  assert.equal(isLoopbackUrl('http://localhost:9100'), true);
+  assert.equal(isLoopbackUrl('http://192.168.50.96:9100'), false);
+  // no config at all -> Tracearr's 127.0.0.1 default must NOT be probed
+  fs.mkdirSync(process.env.DATA_DIR, { recursive: true });
+  fs.writeFileSync(sPath, JSON.stringify({}));
+  assert.equal(serviceProbeBase('Tracearr'), '', 'loopback default -> not configured');
+  // a fleet service's own host/port becomes the probe address
+  fs.writeFileSync(sPath, JSON.stringify({ customServices: [{ name: 'Tracearr', host: '192.168.50.96', port: 30316 }] }));
+  assert.equal(serviceProbeBase('Tracearr'), 'http://192.168.50.96:30316');
+  // port 443 implies https
+  fs.writeFileSync(sPath, JSON.stringify({ customServices: [{ name: 'TrueNAS Web UI', host: '192.168.50.96', port: 443 }] }));
+  assert.equal(serviceProbeBase('TrueNAS Web UI'), 'https://192.168.50.96:443');
+  // an explicit endpoints override beats everything
+  fs.writeFileSync(sPath, JSON.stringify({ endpoints: { Tracearr: { url: 'http://10.0.0.9:30316/' } }, customServices: [{ name: 'Tracearr', host: '192.168.50.96', port: 30316 }] }));
+  assert.equal(serviceProbeBase('Tracearr'), 'http://10.0.0.9:30316');
+  fs.writeFileSync(sPath, JSON.stringify({}));
 });
 
 // ── 6a2. stateless session tokens: validate, survive "restart", reject forgery ──
