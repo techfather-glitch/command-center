@@ -4,6 +4,16 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.8] — 2026-07-05
+
+### Added
+- **`COOKIE_SECURE` override** for the session cookie. A cookie flagged `Secure`
+  is dropped by the browser over http, so if a reverse proxy's scheme handling is
+  off the session never sticks and sign-in loops (password accepted, bounces
+  straight back). Set `COOKIE_SECURE=0` to force the flag off and break the loop;
+  `COOKIE_SECURE=1` forces it on; unset keeps the automatic behavior (follows the
+  real transport).
+
 ## [2.0.7] — 2026-07-05
 
 ### Fixed
@@ -223,6 +233,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.8]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.8
 [2.0.7]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.7
 [2.0.6]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.6
 [2.0.5]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.5

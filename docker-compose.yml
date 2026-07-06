@@ -25,5 +25,8 @@ services:
       #   - PUBLIC_URL=https://cc.example.com
       - PUBLIC_URL=
       - TRUST_PROXY=1
+      # If sign-in loops (password accepted, bounces back) behind a proxy, the
+      # browser is dropping the Secure session cookie — set this to 0:
+      # - COOKIE_SECURE=0
       # - DEMO=1                    # uncomment to explore with fully synthetic data
     restart: unless-stopped

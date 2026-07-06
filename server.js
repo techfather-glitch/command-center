@@ -1991,8 +1991,19 @@ function publicOrigin(req) { return PUBLIC_URL || `${reqScheme(req)}://${reqHost
 // Lax still omits the cookie on cross-site sub-requests and POSTs, and CSRF is
 // independently closed by the same-origin Origin/Referer gate — so relaxing to
 // Lax fixes the proxy loop without widening the CSRF surface.
+// Whether the session cookie carries the `Secure` attribute. Auto by default
+// (follows the real transport). A cookie marked Secure is silently DROPPED by the
+// browser over http — so if a proxy's scheme handling is off, the session never
+// sticks and login loops. `COOKIE_SECURE=0` forces it off (fixes the loop);
+// `COOKIE_SECURE=1` forces it on.
+function cookieSecure(req) {
+    const f = String(process.env.COOKIE_SECURE || '').trim().toLowerCase();
+    if (f === '0' || f === 'false' || f === 'off' || f === 'no') return false;
+    if (f === '1' || f === 'true' || f === 'on' || f === 'yes') return true;
+    return isSecureRequest(req);
+}
 function sessionCookie(req, name, value, maxAgeSec) {
-    const secure = isSecureRequest(req) ? '; Secure' : '';
+    const secure = cookieSecure(req) ? '; Secure' : '';
     return `${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSec}${secure}`;
 }
 // Security/hardening headers for the HTML document + static responses. CSP allows
