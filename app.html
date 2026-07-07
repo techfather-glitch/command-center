@@ -5738,10 +5738,46 @@ function nativeCfgForm(id) {
         <div class="svc-group__label" style="margin-top:14px">Embedded panels</div>
         <input class="set-input" id="grafanaPanelUrl" placeholder="Paste a panel Share → Link URL" style="margin:6px 0"><input class="set-input" id="grafanaPanelTitle" placeholder="Title (optional)" style="margin-bottom:6px"><button class="tbtn" onclick="grafanaAddPanel()">Add panel</button>
         ${grafanaConfig().panels.map((p, i) => `<div class="insp-row"><span class="insp-k">${esc(p.title || ('Panel ' + p.panelId))}</span><span class="insp-v">${esc(p.uid)} · ${esc(String(p.panelId))}</span><button class="iconbtn danger" onclick="grafanaRemovePanel(${i})" title="Remove panel" aria-label="Remove ${esc(p.title || ('panel ' + p.panelId))}">✕</button></div>`).join('')}`;
-    if (id === 'truenas') return `<div class="set-desc" style="margin-bottom:10px">API key from TrueNAS → Settings → API Keys. Unlocks pool health, scrubs and protection status.</div>${credField('TrueNAS API key', 'key_truenas', keyOf('TrueNAS Web UI'))}<button class="tbtn primary" style="margin-top:8px" onclick="saveOneKey('TrueNAS Web UI','key_truenas')">Save key</button>`;
-    if (id === 'tracearr') return `<div class="set-desc" style="margin-bottom:10px">Tracearr aggregates Plex + Emby sessions — it powers the Media watch floor.</div>${credField('Tracearr API key', 'key_tracearr', keyOf('Tracearr'))}<button class="tbtn primary" style="margin-top:8px" onclick="saveOneKey('Tracearr','key_tracearr')">Save key</button>`;
+    // Native probe providers: ONE form with everything the provider needs —
+    // address + credential. Saving it configures the probe, joins the fleet and
+    // lights the concept pages. No separate "Fleet & probes" step, ever.
+    const NP = {
+        truenas:  ['TrueNAS Web UI', 'Pool health, scrubs and protection status. API key from TrueNAS → Credentials → API Keys.', true,  'https://192.168.1.10'],
+        tracearr: ['Tracearr', 'Aggregates Plex + Emby sessions — powers the Media watch floor. API key from Tracearr → Settings → API Keys.', true, 'http://192.168.1.10:30316'],
+        nodeexp:  ['Node Exporter', 'Host CPU / memory / thermals / disk metrics — powers Compute and the Home vitals.', false, 'http://192.168.1.10:9100'],
+        nodefs:   ['Node Exporter', 'Filesystem metrics come from the same Node Exporter endpoint.', false, 'http://192.168.1.10:9100'],
+        cadvisor: ['cAdvisor', 'Read-only per-container CPU/RAM when no Docker API is connected.', false, 'http://192.168.1.10:8089'],
+        prometheus: ['Prometheus', 'Scrape-target health for Observability.', false, 'http://192.168.1.10:9090'],
+        loki:     ['Loki', 'Log aggregation reachability.', false, 'http://192.168.1.10:3100']
+    };
+    if (NP[id]) {
+        const [svcName, desc, needsKey, ph] = NP[id];
+        const url = (s.endpoints && s.endpoints[svcName] && s.endpoints[svcName].url) || '';
+        return `<div class="set-desc" style="margin-bottom:10px">${desc}</div>
+            ${field('Address (URL)', 'np_url_' + id, url, ph)}
+            ${needsKey ? credField('API key', 'np_key_' + id, keyOf(svcName)) : ''}
+            <button class="tbtn primary" style="margin-top:8px" onclick="saveNativeProbe('${id}', ${jstr(svcName)}, ${needsKey})">Save &amp; connect</button>`;
+    }
     return `<div class="set-desc">This provider is read directly from the server's probe configuration — nothing to configure here. It reports automatically while the endpoint is reachable.</div>`;
 }
+window.saveNativeProbe = async function (id, svcName, hasKey) {
+    const url = gv('np_url_' + id).trim();
+    const endpoints = Object.assign({}, (Store.settings || {}).endpoints || {});
+    if (url) endpoints[svcName] = Object.assign({}, endpoints[svcName], { url });
+    else delete endpoints[svcName];
+    const patch = { endpoints };
+    if (hasKey) {
+        const v = gv('np_key_' + id);
+        if (v && v !== '***') { const ak = Object.assign({}, (Store.settings || {}).apiKeys || {}); ak[svcName] = Object.assign({}, ak[svcName] || {}, { key: v }); patch.apiKeys = ak; }
+    }
+    if (await saveSettings(patch, 'Saving…')) {
+        await refreshStatus();
+        if (id === 'tracearr') await refreshTracearr();
+        if (id === 'truenas' && typeof refreshTrueNas === 'function') await refreshTrueNas();
+        if ((id === 'nodeexp' || id === 'nodefs') && typeof refreshHost === 'function') await refreshHost();
+        render(); toast(svcName + ' saved ✓' + (url ? ' — probing ' + url : ''));
+    }
+};
 window.openProviderCfg = function (id) {
     const p = Providers.byId(id);
     const cat = (Store.integrations || []).find(x => x.id === id);

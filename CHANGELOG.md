@@ -4,6 +4,24 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.17] — 2026-07-06
+
+### Fixed
+- **Native providers are now fully configurable from their own card.** Tracearr,
+  Node Exporter, cAdvisor, TrueNAS, Prometheus and Loki cards only exposed an
+  API-key field (or nothing) — there was **no way to set their address** in the
+  UI, forcing a detour through Fleet & probes. Every native provider card now
+  carries an **Address (URL)** field plus its credential in one form; saving it
+  configures the probe, joins the fleet automatically and lights the concept
+  pages. Adding a provider is the only action — Fleet & probes remains only for
+  extra watch-only services.
+- The containers summary no longer probes cAdvisor's loopback default; like
+  every native probe it uses the configured address or says plainly that none is
+  set.
+- "No address" errors now point at the right place — *open its card in
+  Settings → Providers and set the URL* — instead of the old Fleet & probes
+  detour.
+
 ## [2.0.16] — 2026-07-06
 
 ### Fixed
@@ -370,6 +388,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.17]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.17
 [2.0.16]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.16
 [2.0.15]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.15
 [2.0.14]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.14

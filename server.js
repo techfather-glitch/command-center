@@ -765,6 +765,18 @@ function visibleServices() {
             out.push({ name: def.title, host: u.hostname, port, type: def.category || 'Integration', url: ep, authHeader: '', probePath: '/' });
         } catch (e) { /* unparseable URL — skip */ }
     }
+    // Same for native probes (Tracearr, Node Exporter, TrueNAS…): giving one an
+    // address on its provider card IS the add — it joins the fleet automatically.
+    for (const [name, ep] of Object.entries(settings.endpoints || {})) {
+        if (!LIVE_PROBES[name] || !ep || !ep.url || hidden.has(name)) continue;
+        try {
+            const u = new URL(ep.url);
+            const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+            if (covered.has(`${u.hostname}:${port}`)) continue;
+            covered.add(`${u.hostname}:${port}`);
+            out.push({ name, host: u.hostname, port, type: 'Native', url: ep.url, authHeader: '', probePath: '/' });
+        } catch (e) { /* unparseable URL — skip */ }
+    }
     return out;
 }
 
@@ -1005,7 +1017,8 @@ function fetchTextUrl(url, timeoutMs = 10000) {
 }
 
 async function queryContainerSummary() {
-    const baseUrl = (storedEndpoint('cAdvisor') || LIVE_PROBES['cAdvisor'].defaultUrl).replace(/\/+$/, '');
+    const baseUrl = serviceProbeBase('cAdvisor');
+    if (!baseUrl) throw new Error('cAdvisor has no address — open its card in Settings → Providers and set the URL');
     const raw = await fetchTextUrl(baseUrl + '/metrics');
     const now = Date.now();
     // Targeted line scan — only the metrics the summary needs, no generic label parse.
@@ -2814,7 +2827,7 @@ const server = http.createServer(async (req, res) => {
         const TRACEARR_BASE = serviceProbeBase('Tracearr');
         if (!TRACEARR_BASE) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ configured: false, error: 'Tracearr has no address — add it with its host/port in Settings → Fleet & probes' }));
+            res.end(JSON.stringify({ configured: false, error: 'Tracearr has no address — open its card in Settings → Providers and set the URL' }));
             return;
         }
         const pathsToTry = [
@@ -3138,7 +3151,7 @@ const server = http.createServer(async (req, res) => {
         const trProxyBase = serviceProbeBase('Tracearr');
         if (!trProxyBase) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ configured: false, error: 'Tracearr has no address — add it with its host/port in Settings → Fleet & probes' }));
+            res.end(JSON.stringify({ configured: false, error: 'Tracearr has no address — open its card in Settings → Providers and set the URL' }));
             return;
         }
         const tracearrPath = req.url.replace('/api/tracearr/', '');
@@ -3230,7 +3243,7 @@ const server = http.createServer(async (req, res) => {
             const endpoint = serviceProbeBase('TrueNAS Web UI');
             if (!endpoint) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ pools: [], configured: false, error: 'TrueNAS has no address — add it with its host/port in Settings → Fleet & probes' }));
+                res.end(JSON.stringify({ pools: [], configured: false, error: 'TrueNAS has no address — open its card in Settings → Providers and set the URL' }));
                 return;
             }
             try {
@@ -3263,7 +3276,7 @@ const server = http.createServer(async (req, res) => {
         const baseUrl = serviceProbeBase(svc);
         if (!baseUrl) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ configured: false, error: `${svc} has no address — add it with its host/port in Settings → Fleet & probes` }));
+            res.end(JSON.stringify({ configured: false, error: `${svc} has no address — open its card in Settings → Providers and set the URL` }));
             return;
         }
         try {
