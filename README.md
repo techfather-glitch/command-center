@@ -99,6 +99,33 @@ Command Center groups everything behind **concepts**. Providers plug in undernea
 
 …and ~40 total in the catalog. Adding a new one is a single data object — see [ARCHITECTURE.md](ARCHITECTURE.md#the-provider-system).
 
+## Connecting Docker
+
+The **Docker** provider gives you live per-container CPU/RAM, start / stop / restart and logs. It needs Docker's **Engine API** — not the raw socket mounted into a container, and **not** a Dockge or Portainer web UI (those are management apps that happen to sit *on top of* Docker; they aren't the API).
+
+Exposing the raw socket over TCP (`-H tcp://0.0.0.0:2375`) is unauthenticated root access to your whole host — don't do that. The safe, standard way is a tiny read-scoped **socket-proxy** that forwards only the calls Command Center needs. Add it as its own stack (Dockge, Portainer, or plain `docker compose`):
+
+```yaml
+services:
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: docker-socket-proxy
+    environment:
+      - CONTAINERS=1   # list, inspect, live CPU/RAM, logs
+      - POST=1         # start / stop / restart
+      - INFO=1
+      - VERSION=1
+    ports:
+      - "2375:2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+```
+
+Then in Command Center open **Settings → Providers → Docker → Configure** and set **Docker host** to the proxy's address — your Docker host's LAN IP, e.g. `http://192.168.1.10:2375`. Save, and your containers come alive with live stats and controls, and the **Logs** page lights up.
+
+> **Keep it on the LAN.** Even proxied, port 2375 can start and stop containers — never expose it to the internet or route it through a public tunnel.
+
 ## Architecture
 
 - **One Node.js file, zero npm dependencies.** The server (`server.js`) uses only Node built-ins — `http`, `crypto`, `net`, `tls`, `zlib`. No framework, no build.
