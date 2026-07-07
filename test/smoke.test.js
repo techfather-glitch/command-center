@@ -312,31 +312,54 @@ test('serviceProbeBase: loopback defaults are "not configured", user addresses w
   const sPath = path.join(process.env.DATA_DIR, 'dashboard-settings.json');
   assert.equal(isLoopbackUrl('http://127.0.0.1:30316'), true);
   assert.equal(isLoopbackUrl('http://localhost:9100'), true);
-  assert.equal(isLoopbackUrl('http://192.168.50.96:9100'), false);
+  assert.equal(isLoopbackUrl('http://192.168.1.20:9100'), false);
   // no config at all -> Tracearr's 127.0.0.1 default must NOT be probed
   fs.mkdirSync(process.env.DATA_DIR, { recursive: true });
   fs.writeFileSync(sPath, JSON.stringify({}));
   assert.equal(serviceProbeBase('Tracearr'), '', 'loopback default -> not configured');
   // a fleet service's own host/port becomes the probe address
-  fs.writeFileSync(sPath, JSON.stringify({ customServices: [{ name: 'Tracearr', host: '192.168.50.96', port: 30316 }] }));
-  assert.equal(serviceProbeBase('Tracearr'), 'http://192.168.50.96:30316');
+  fs.writeFileSync(sPath, JSON.stringify({ customServices: [{ name: 'Tracearr', host: '192.168.1.20', port: 30316 }] }));
+  assert.equal(serviceProbeBase('Tracearr'), 'http://192.168.1.20:30316');
   // port 443 implies https
-  fs.writeFileSync(sPath, JSON.stringify({ customServices: [{ name: 'TrueNAS Web UI', host: '192.168.50.96', port: 443 }] }));
-  assert.equal(serviceProbeBase('TrueNAS Web UI'), 'https://192.168.50.96:443');
+  fs.writeFileSync(sPath, JSON.stringify({ customServices: [{ name: 'TrueNAS Web UI', host: '192.168.1.20', port: 443 }] }));
+  assert.equal(serviceProbeBase('TrueNAS Web UI'), 'https://192.168.1.20:443');
   // an explicit endpoints override beats everything
-  fs.writeFileSync(sPath, JSON.stringify({ endpoints: { Tracearr: { url: 'http://10.0.0.9:30316/' } }, customServices: [{ name: 'Tracearr', host: '192.168.50.96', port: 30316 }] }));
+  fs.writeFileSync(sPath, JSON.stringify({ endpoints: { Tracearr: { url: 'http://10.0.0.9:30316/' } }, customServices: [{ name: 'Tracearr', host: '192.168.1.20', port: 30316 }] }));
   assert.equal(serviceProbeBase('Tracearr'), 'http://10.0.0.9:30316');
   fs.writeFileSync(sPath, JSON.stringify({}));
+});
+
+// ── 5b2. repo hygiene: no real private IPs / secrets in tracked source ────────
+// Mirrors the CI "no private data" guard so `node --test` catches a leak LOCALLY
+// before it can reach GitHub. The pattern is built from escaped fragments whose
+// regex-source text does not itself match the pattern, so this test can't self-trip.
+test('no private-data markers in tracked source (js/html/md/yml)', () => {
+  const fs = require('node:fs');
+  const root = path.join(__dirname, '..');
+  const rx = new RegExp('192\\.168\\.(50|4)\\.' + '|BEGIN (RSA|OPENSSH|EC) PRIVATE KEY' + '|glsa_[A-Za-z0-9]{16}' + '|xoxb-[0-9]');
+  const exts = new Set(['.js', '.html', '.md', '.yml']);
+  const skip = new Set(['.git', 'node_modules']);
+  const offenders = [];
+  (function walk(dir) {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (skip.has(ent.name)) continue;
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) { walk(full); continue; }
+      if (!exts.has(path.extname(ent.name))) continue;
+      fs.readFileSync(full, 'utf8').split('\n').forEach((line, i) => { if (rx.test(line)) offenders.push(`${path.relative(root, full)}:${i + 1}`); });
+    }
+  })(root);
+  assert.deepEqual(offenders, [], 'private-data markers found (CI would reject):\n' + offenders.join('\n'));
 });
 
 // ── 5c. outbound TLS policy: self-signed tolerated ONLY for private addresses ──
 test('TLS policy: private LAN hosts relaxed, public hostnames verified', () => {
   // private → relaxed (self-signed UniFi/TrueNAS/Proxmox just work)
-  assert.equal(isPrivateHostname('192.168.4.1'), true);
+  assert.equal(isPrivateHostname('192.168.1.1'), true);
   assert.equal(isPrivateHostname('10.1.2.3'), true);
   assert.equal(isPrivateHostname('nas.local'), true);
   assert.equal(isPrivateHostname('truenas'), true, 'single-label LAN name');
-  assert.equal(tlsRelaxedFor('https://192.168.50.96'), true);
+  assert.equal(tlsRelaxedFor('https://192.168.1.20'), true);
   // public → verified (api.tailscale.com etc. must NOT accept self-signed)
   assert.equal(isPrivateHostname('api.tailscale.com'), false);
   assert.equal(isPrivateHostname('8.8.8.8'), false);
@@ -345,7 +368,7 @@ test('TLS policy: private LAN hosts relaxed, public hostnames verified', () => {
 
 test('describeNetErr names the real failure, not a generic message', () => {
   const e = (code, message) => Object.assign(new Error(message || code), { code });
-  assert.match(describeNetErr(e('EHOSTUNREACH'), 'https://192.168.4.1'), /cannot reach.*VLAN\/firewall/i);
+  assert.match(describeNetErr(e('EHOSTUNREACH'), 'https://192.168.1.1'), /cannot reach.*VLAN\/firewall/i);
   assert.match(describeNetErr(e('ECONNREFUSED'), 'x'), /refused.*port/i);
   assert.match(describeNetErr(e('ENOTFOUND'), 'x'), /DNS/i);
   assert.match(describeNetErr(e('DEPTH_ZERO_SELF_SIGNED_CERT', 'self-signed certificate'), 'x'), /TLS certificate/i);
