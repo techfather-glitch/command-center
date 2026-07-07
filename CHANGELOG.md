@@ -4,6 +4,18 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.20] — 2026-07-06
+
+### Fixed
+- **The sidebar no longer "reloads" on refresh.** Each concept (Networking,
+  Compute, Storage, Observability, Logs…) only appeared once its provider's live
+  widget/probe data had arrived, so a refresh started with a sparse nav that
+  filled in a beat later. The nav now decides from **configuration** (enabled
+  integrations + settings, known immediately) instead of live health, backed by
+  a persisted last-known set — so the complete nav renders on the very first
+  paint and stays stable through load. Verified: the nav at refresh (zero live
+  data) is byte-identical to the fully-loaded nav.
+
 ## [2.0.19] — 2026-07-06
 
 ### Performance
@@ -417,6 +429,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.20]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.20
 [2.0.19]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.19
 [2.0.18]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.18
 [2.0.17]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.17

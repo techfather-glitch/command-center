@@ -2351,12 +2351,51 @@ function conceptProviders(id) {
         .filter(p => p.setupState !== 'available')   // strips show configured/connected, not the whole catalog
         .map(p => ({ id: p.id, name: p.title, connected: p.setupState === 'connected' && (p.healthState === 'ok' || p.healthState === 'degraded'), note: p.errorState ? p.errorState.message : (typeof p.source === 'string' && /read-only|via /.test(p.source) ? p.source : '') }));
 }
+// Persisted last-known set of concepts that have a provider — so a REFRESH
+// renders the full nav immediately instead of icons popping in one by one as
+// each provider's widget/probe data lands (the reported "services reload").
+let _navActive = (() => { try { return new Set(JSON.parse(localStorage.getItem('cc-nav-active') || '[]')); } catch (e) { return new Set(); } })();
+function _navPersist() { try { localStorage.setItem('cc-nav-active', JSON.stringify([..._navActive])); } catch (e) {} }
+// Is a concept CONFIGURED? Derived from settings + the enabled-integration flags
+// (both known early), NOT from live probe data — so the answer is stable on first
+// paint and doesn't change as widgets finish loading.
+function conceptConfigured(id) {
+    const s = Store.settings || {};
+    const ep = s.endpoints || {};
+    const custom = Array.isArray(s.customServices) ? s.customServices : [];
+    // A native provider counts as configured whether it was set up as an endpoint
+    // (provider card) OR as a fleet service (customServices) OR imported.
+    const has = (n) => !!(ep[n] && ep[n].url) || custom.some(c => c.name === n);
+    if ((Store.integrations || []).some(d => d.enabled && (ID_CONCEPT[d.id] || CAT_CONCEPT[d.category] || 'applications') === id)) return true;
+    switch (id) {
+        case 'networking':    return !!(s.unifi && s.unifi.url) || has('UniFi');
+        case 'storage':       return has('TrueNAS Web UI');
+        case 'compute':       return has('Node Exporter');
+        case 'media':         return has('Tracearr') || has('Plex Media Server') || has('Emby') || has('Dropped Needle');
+        case 'automation':    return ['Sonarr', 'Sonarr-Anime', 'Sonarr-Asian', 'Radarr', 'Lidarr', 'Prowlarr', 'Sabnzbd', 'Qbt', 'Seer'].some(has);
+        case 'observability': return has('Prometheus') || has('cAdvisor') || has('Loki') || has('Grafana') || !!(ep.grafana && ep.grafana.url) || !!((s.apiKeys || {}).Grafana);
+        case 'applications':  return !!s.dockerHost || has('cAdvisor') || has('Dockge') || svcAny(CONCEPT_TYPES.applications);
+        case 'logs':          return !!s.dockerHost;
+        default:              return false;
+    }
+}
+function conceptLive(id) {
+    if (id === 'applications') return dockerControl() || !!(Store.containers && Store.containers.list && Store.containers.list.length) || svcAny(CONCEPT_TYPES.applications);
+    if (id === 'logs') return dockerControl();
+    return Providers.byConcept(id).some(p => p.setupState === 'connected');   // no healthState gate — configured is enough for the nav
+}
 function conceptActive(id) {
     if (id === 'dashboard' || id === 'alerts' || id === 'settings') return true;
-    if (!Store.lastUpdate) return true;   // optimistic before first data lands (avoids nav flicker)
-    if (id === 'applications') return dockerControl() || !!(Store.containers && Store.containers.list && Store.containers.list.length) || svcAny(CONCEPT_TYPES.applications);
-    if (id === 'logs') return dockerControl();   // the log floor needs a real Docker host (cAdvisor is read-only)
-    return Providers.byConcept(id).some(p => p.setupState === 'connected' && p.healthState !== 'unknown');
+    const on = conceptConfigured(id) || conceptLive(id);
+    // Only trust the computed answer once settings AND the catalog have loaded;
+    // until then, show the persisted last-known set so the nav is complete on refresh.
+    const ready = !!Store.settings && Array.isArray(Store.integrations) && Store.integrations.length > 0;
+    if (ready) {
+        if (on && !_navActive.has(id)) { _navActive.add(id); _navPersist(); }
+        else if (!on && _navActive.has(id)) { _navActive.delete(id); _navPersist(); }
+        return on;
+    }
+    return on || _navActive.has(id);
 }
 const NAV = [
     { id: 'dashboard',     label: 'Home',          icon: 'home',    section: 'Overview' },
