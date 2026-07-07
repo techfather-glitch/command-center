@@ -57,9 +57,9 @@ It talks to the tools you already run, normalizes them behind a common provider 
 |---|---|---|
 | ![Applications](assets/screenshots/applications-desktop.png) | ![Media](assets/screenshots/media-desktop.png) | ![Settings](assets/screenshots/settings-desktop.png) |
 
-| Phone | Tablet |
-|---|---|
-| <img src="assets/screenshots/home-phone.png" width="240"> | <img src="assets/screenshots/home-tablet.png" width="420"> |
+The same **Home** view on a phone — a purpose-built layout with a bottom tab bar, not a shrunk desktop:
+
+<p><img src="assets/screenshots/home-phone.png" width="260" alt="Command Center — Home on a phone"></p>
 
 ## Quick start
 
