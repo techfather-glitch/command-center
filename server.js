@@ -2204,6 +2204,16 @@ function securityHeaders(req) {
 const DEMO = process.env.DEMO === '1';
 const DEMO_T0 = Date.now();
 function dwave(period, amp, base, phase) { return base + amp * Math.sin((Date.now() - DEMO_T0) / period + (phase || 0)); }
+function demoSilentWav() {
+    // A silent 30s mono 16-bit WAV so the DEMO player can actually play + seek — same-origin
+    // (not a data: URI, which CSP media-src 'self' would block). Zeros = silence.
+    const sr = 8000, secs = 30, dataLen = sr * secs * 2, b = Buffer.alloc(44 + dataLen);
+    b.write('RIFF', 0); b.writeUInt32LE(36 + dataLen, 4); b.write('WAVE', 8);
+    b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22);
+    b.writeUInt32LE(sr, 24); b.writeUInt32LE(sr * 2, 28); b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34);
+    b.write('data', 36); b.writeUInt32LE(dataLen, 40);
+    return b;
+}
 function demoServices() {
     const S = (name, port, type, url) => ({ name, host: '198.51.100.10', port, type, url: url || `https://demo.example.com` });
     return [
@@ -2416,6 +2426,12 @@ async function demoRoute(req, res) {
         await readJsonBody(req).catch(() => ({}));
         send({ ok: true, status: 'queued', demo: true }); return true;
     }
+    if (u === '/api/dn/stream' && (req.method === 'GET' || req.method === 'HEAD')) {
+        const buf = demoSilentWav();
+        res.writeHead(200, { 'Content-Type': 'audio/wav', 'Accept-Ranges': 'bytes', 'Content-Length': buf.length, 'Cache-Control': 'no-store' });
+        if (req.method === 'HEAD') { res.end(); return true; }
+        res.end(buf); return true;
+    }
     if (u === '/api/dn/query' && req.method === 'POST') {
         const body = await readJsonBody(req).catch(() => ({}));
         const what = body && body.what;
@@ -2428,6 +2444,14 @@ async function demoRoute(req, res) {
         }
         if (what === 'requests') { send({ ok: true, active: [{ album: 'Swimming', artist: 'Mac Miller', status: 'downloading', progress: 42, by: 'you' }], history: [{ album: 'Currents', artist: 'Tame Impala', status: 'completed', by: 'you' }], total: 1 }); return true; }
         if (what === 'downloads') { send({ ok: true, items: [{ album: 'In These Parts', artist: 'Tom MacDonald', status: 'downloading', progress: 64, files: '1/1' }, { album: 'Currents', artist: 'Tame Impala', status: 'completed', progress: 100, files: '13/13' }] }); return true; }
+        if (what === 'play-album') {
+            const s = n => '/api/dn/stream?u=' + encodeURIComponent('/api/v1/stream/local/demo' + n);
+            send({ ok: true, album: String(body.album || 'Currents'), cover: null, queue: [
+                { title: 'Let It Happen', artist: 'Tame Impala', album: 'Currents', duration: 30, source: 'local', src: s(1) },
+                { title: 'The Less I Know the Better', artist: 'Tame Impala', album: 'Currents', duration: 30, source: 'local', src: s(2) },
+                { title: 'Eventually', artist: 'Tame Impala', album: 'Currents', duration: 30, source: 'local', src: s(3) }
+            ] }); return true;
+        }
         send({ ok: true, items: [] }); return true;
     }
     if (u === '/api/live' && req.method === 'POST') {
@@ -3063,6 +3087,38 @@ const server = http.createServer(async (req, res) => {
             preq.on('timeout', () => preq.destroy(new Error('timeout')));
             preq.on('error', () => { try { res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end('cover fetch failed'); } catch (e) {} });
         } catch (e) { jsonRes(res, 200, { ok: false, error: e.message }); }
+    } else if (req.url.startsWith('/api/dn/stream') && (req.method === 'GET' || req.method === 'HEAD')) {
+        // Authenticated audio proxy — this is what makes Command Center a Dropped Needle
+        // *player*. The browser <audio> streams from here; we attach the vaulted Bearer
+        // token (never exposed) and forward the Range header so the browser can seek.
+        // Path is allowlisted to DN's /api/v1/stream/* endpoints; bytes pipe straight
+        // through and the upstream is dropped the moment the client aborts (skip/seek).
+        try {
+            const p = new URL(req.url, 'http://x').searchParams.get('u') || '';
+            const okPath = /^\/api\/v1\/stream\/(jellyfin|navidrome|local)\/[A-Za-z0-9._~-]{1,128}$/.test(p)
+                || /^\/api\/v1\/stream\/plex\/[A-Za-z0-9%._~/-]{1,200}$/.test(p);
+            if (!okPath) { res.writeHead(400, { 'Content-Type': 'text/plain' }); res.end('bad stream path'); return; }
+            const auth = await dnAuthHeaders();
+            const u = new URL(dnBaseUrl() + p);
+            const hdrs = { Authorization: auth.Authorization, 'User-Agent': 'command-center/player' };
+            if (req.headers.range) hdrs['Range'] = req.headers.range;
+            const lib3 = u.protocol === 'https:' ? require('https') : require('http');
+            const opts = { method: req.method, headers: hdrs, timeout: 20000 };
+            if (u.protocol === 'https:' && tlsRelaxedFor(u)) opts.rejectUnauthorized = false;
+            const preq = lib3.request(u, opts, (pr) => {
+                if (pr.statusCode >= 400) { res.writeHead(pr.statusCode === 404 ? 404 : pr.statusCode === 416 ? 416 : 502, { 'Content-Type': 'text/plain' }); res.end('stream unavailable'); pr.resume(); return; }
+                const h = { 'Content-Type': pr.headers['content-type'] || 'audio/mpeg', 'Accept-Ranges': pr.headers['accept-ranges'] || 'bytes', 'Cache-Control': 'no-store' };
+                if (pr.headers['content-length']) h['Content-Length'] = pr.headers['content-length'];
+                if (pr.headers['content-range']) h['Content-Range'] = pr.headers['content-range'];
+                res.writeHead(pr.statusCode, h);
+                if (req.method === 'HEAD') { res.end(); pr.resume(); return; }
+                pr.pipe(res);
+            });
+            preq.on('timeout', () => preq.destroy(new Error('timeout')));
+            preq.on('error', () => { try { res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end('stream fetch failed'); } catch (e) {} });
+            req.on('close', () => preq.destroy());   // client aborted (skip / seek) — drop upstream
+            preq.end();
+        } catch (e) { try { res.writeHead(502, { 'Content-Type': 'text/plain' }); res.end('stream error'); } catch (_) {} }
     } else if (req.url === '/api/dn/query' && req.method === 'POST') {
         // In-dashboard Dropped Needle data: a strict allowlist of read-only queries the
         // Media lane renders inline (search / requests / downloads / releases) — the
@@ -3091,6 +3147,30 @@ const server = http.createServer(async (req, res) => {
             } else if (what === 'releases') {
                 const r = await get('/api/v1/following/new-releases?limit=24&offset=0');
                 jsonRes(res, 200, { ok: true, items: (r.items || []).map(x => ({ title: x.title, artist: x.artist_name, date: x.first_release_date, type: x.primary_type, mbid: x.release_group_mbid, cover: coverRef({ musicbrainz_id: x.release_group_mbid }) })) });
+            } else if (what === 'play-album') {
+                // Build a playable queue for a LIBRARY album: fetch its tracks, resolve each
+                // to a concrete stream (source + id), and hand back proxied URLs the browser
+                // can play directly. Only downloaded music resolves — the rest is skipped.
+                const mbid = String(payload.mbid || '').trim();
+                if (!/^[0-9a-fA-F-]{8,40}$/.test(mbid)) { jsonRes(res, 200, { ok: false, error: 'invalid album id' }); return; }
+                const at = await get('/api/v1/library/albums/' + mbid + '/tracks');
+                const tracks = Array.isArray(at.items) ? at.items : [];
+                if (!tracks.length) { jsonRes(res, 200, { ok: false, error: 'no tracks in your library for this album' }); return; }
+                const rr = await igFetch(base + '/api/v1/library/resolve-tracks', { method: 'POST', headers, body: { items: tracks.map(t => ({ release_group_mbid: mbid, disc_number: t.disc_number || 1, track_number: t.track_number })) } });
+                const resolved = (rr.body && Array.isArray(rr.body.items)) ? rr.body.items : [];
+                const keyOf = x => (x.disc_number || 1) + ':' + x.track_number;
+                const rmap = {}; resolved.forEach(x => { rmap[keyOf(x)] = x; });
+                const queue = tracks.map(t => {
+                    const rv = rmap[keyOf(t)] || {};
+                    const path = (rv.stream_url && /^\/api\/v1\/stream\//.test(rv.stream_url)) ? rv.stream_url : (rv.source && rv.track_source_id ? '/api/v1/stream/' + rv.source + '/' + rv.track_source_id : null);
+                    return path ? {
+                        title: t.track_title || ('Track ' + t.track_number), artist: t.artist_name || '',
+                        album: String(payload.album || ''), duration: t.duration_seconds || rv.duration || null,
+                        source: rv.source || 'local', src: '/api/dn/stream?u=' + encodeURIComponent(path)
+                    } : null;
+                }).filter(Boolean);
+                if (!queue.length) { jsonRes(res, 200, { ok: false, error: 'these tracks aren\'t streamable yet — still downloading?' }); return; }
+                jsonRes(res, 200, { ok: true, queue, album: String(payload.album || ''), cover: payload.cover || null });
             } else jsonRes(res, 400, { ok: false, error: 'unknown query' });
         } catch (e) { jsonRes(res, 200, { ok: false, error: e.message }); }
     } else if (req.url === '/api/dn/plex/pin' && req.method === 'POST') {
@@ -3158,6 +3238,22 @@ const server = http.createServer(async (req, res) => {
                     release_group_mbid: payload.rgMbid || undefined,
                     artist_mbid: payload.artistMbid || undefined
                 } });
+            } else if (action === 'report-nowplaying') {
+                // Reflect the dashboard's own playback in DN's now-playing broadcast (so it
+                // appears in the floor and to other DN users). Best-effort, not audited —
+                // this fires on every play/pause/heartbeat and must never break playback.
+                const rp = await igFetch(base + '/api/v1/now-playing', { method: 'POST', headers, body: {
+                    device: 'command-center', source: payload.source || 'local',
+                    track_name: payload.track || undefined, artist_name: payload.artist || undefined,
+                    album_name: payload.album || undefined, cover_url: payload.cover || undefined,
+                    is_paused: !!payload.paused,
+                    progress_ms: payload.progressMs != null ? Math.round(Number(payload.progressMs) || 0) : undefined,
+                    duration_ms: payload.durationMs != null ? Math.round(Number(payload.durationMs) || 0) : undefined
+                } });
+                jsonRes(res, 200, { ok: rp.status >= 200 && rp.status < 300 }); return;
+            } else if (action === 'clear-nowplaying') {
+                const rc = await igFetch(base + '/api/v1/now-playing?device=command-center', { method: 'DELETE', headers });
+                jsonRes(res, 200, { ok: rc.status >= 200 && rc.status < 300 }); return;
             } else { jsonRes(res, 400, { ok: false, error: 'unknown action' }); return; }
             const ok = r.status >= 200 && r.status < 300;
             auditLog(req, 'droppedneedle.' + action, label, ok ? 'ok' : 'failed');

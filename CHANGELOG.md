@@ -4,6 +4,25 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — 2026-07-07
+
+### Added
+- **Play your Dropped Needle library straight from Command Center — a real in-dashboard
+  player.** DN's own player is browser-side with no remote-control API, so instead
+  Command Center now *is* a DN player: a persistent bottom **player bar** with play /
+  pause / seek / previous / next and a track queue. Press **▶ Play** on any in-library
+  album (in search results or Recently Added) and its tracks stream through a new
+  authenticated, **Range-capable** proxy (`/api/dn/stream`) — real seeking, and the
+  vaulted session token never touches the browser. The bar lives outside the page view,
+  so music keeps playing as you move between pages, and playback is reported back to DN
+  so it appears in the Now Playing floor.
+
+### Notes
+- Only music that is **in your library** (already downloaded) can be played in the
+  dashboard — streaming needs a real file. Music you search but don't own yet is one
+  **+ Request** away and becomes playable once it finishes downloading. Dashboard
+  playback streams via DN's resolved source (local / Navidrome / Jellyfin / Plex).
+
 ## [2.1.0] — 2026-07-07
 
 ### Added

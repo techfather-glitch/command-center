@@ -1813,6 +1813,30 @@
     .dn-req-btn:disabled { cursor: default; opacity: .9; }
     .dn-req-btn.done { border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: transparent; color: var(--ok); }
     @media (max-width: 640px) { .dn-now-row { grid-template-columns: 40px minmax(0, 1fr) 96px; } .dn-now-who { display: none; } }
+    .dn-play-btn { margin-top: 6px; width: 100%; height: 26px; border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); border-radius: var(--r-well); background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); font: var(--f-lbl); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+    .dn-play-btn:hover { background: color-mix(in srgb, var(--ok) 20%, transparent); }
+    .dn-rel .dn-play-btn + .dn-req-btn { margin-top: 5px; }
+    /* — Dropped Needle player bar — Command Center as a DN player (persists across pages) — */
+    .dn-player { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: color-mix(in srgb, var(--s0) 92%, #000); border-top: 1px solid var(--hair-2); box-shadow: 0 -8px 24px rgba(0,0,0,.35); backdrop-filter: blur(8px); }
+    #dnPlayerUI { display: flex; align-items: center; gap: 12px 14px; flex-wrap: wrap; max-width: 1400px; margin: 0 auto; padding: 8px 16px; }
+    .dnp-art { flex: 0 0 auto; width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--s2); }
+    .dnp-fb { display: flex; align-items: center; justify-content: center; font: 600 20px var(--mono); color: var(--t4); }
+    .dnp-meta { flex: 1 1 150px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .dnp-t { font: var(--f-row); font-weight: 560; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dnp-a { font: var(--f-lbl); color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dnp-ctrl { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+    .dnp-btn { width: 34px; height: 34px; border: 1px solid var(--hair); border-radius: 50%; background: var(--s1); color: var(--t1); cursor: pointer; font-size: 13px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+    .dnp-btn:hover:not(:disabled) { border-color: var(--hair-2); background: var(--s2); }
+    .dnp-btn:disabled { opacity: .35; cursor: default; }
+    .dnp-play { width: 40px; height: 40px; background: var(--live); border-color: var(--live); color: #041014; font-size: 15px; }
+    .dnp-play:hover { filter: brightness(1.08); }
+    .dnp-seek { flex: 2 1 240px; display: flex; align-items: center; gap: 10px; }
+    .dnp-time { font-size: 11px; color: var(--t3); font-feature-settings: var(--tnum); flex: 0 0 auto; min-width: 32px; }
+    .dnp-track { flex: 1; height: 5px; border-radius: 3px; background: var(--s2); cursor: pointer; overflow: hidden; }
+    .dnp-track > i { display: block; height: 100%; background: var(--live); border-radius: 3px; }
+    .dnp-x { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--hair); background: transparent; color: var(--t3); cursor: pointer; }
+    .dnp-x:hover { color: var(--t1); border-color: var(--hair-2); }
+    body.has-dnplayer .view { padding-bottom: 92px; }
 
     /* An element hidden via the `hidden` attribute must stay hidden: author
        `display` rules (like .onboard's below) otherwise beat the UA
@@ -4406,6 +4430,70 @@ window.dnRequest = async function (btn, kind) {
         toast('Request failed: ' + ((r && r.error) || 'unknown'));
     }
 };
+/* ── Dropped Needle player — Command Center streams DN's library audio through the
+   authenticated /api/dn/stream proxy, so you get real play / pause / seek / skip without
+   opening the app. The bar lives on <body> so music keeps playing as you move between
+   pages, and playback is reported back to DN so it appears in the Now Playing floor. ── */
+let _dnPlay = { queue: [], idx: -1, album: '', cover: null, playing: false, cur: 0, dur: 0 };
+let _dnAudio = null, _dnReportAt = 0;
+function dnFmtTime(s) { s = Math.max(0, Math.round(s || 0)); const m = Math.floor(s / 60), ss = s % 60; return m + ':' + (ss < 10 ? '0' : '') + ss; }
+function dnEnsurePlayer() {
+    if (_dnAudio) return _dnAudio;
+    const bar = document.createElement('div'); bar.id = 'dnPlayer'; bar.className = 'dn-player'; bar.hidden = true;
+    const ui = document.createElement('div'); ui.id = 'dnPlayerUI'; bar.appendChild(ui);
+    const a = document.createElement('audio'); a.id = 'dnAudio'; a.preload = 'auto'; bar.appendChild(a);
+    document.body.appendChild(bar); _dnAudio = a;
+    a.addEventListener('timeupdate', () => { _dnPlay.cur = a.currentTime; if (a.duration) _dnPlay.dur = a.duration; dnPlayerTick(); if (_dnPlay.playing && Date.now() - _dnReportAt > 10000) dnReportNow(false); });
+    a.addEventListener('durationchange', () => { if (a.duration) { _dnPlay.dur = a.duration; dnPlayerTick(); } });
+    a.addEventListener('play', () => { _dnPlay.playing = true; dnRenderPlayer(); dnReportNow(false); });
+    a.addEventListener('pause', () => { _dnPlay.playing = false; dnRenderPlayer(); dnReportNow(true); });
+    a.addEventListener('ended', () => dnNext());
+    a.addEventListener('error', () => { if (_dnPlay.idx < _dnPlay.queue.length - 1) { toast('Skipped an unplayable track'); dnNext(); } else { toast('Playback stopped — track unavailable'); } });
+    return a;
+}
+window.dnPlayAlbum = async function (mbid, album, cover) {
+    if (!mbid) { toast('No album to play'); return; }
+    toast('Loading ' + (album ? '“' + album + '”' : 'album') + '…');
+    let r; try { r = await jpost('/api/dn/query', { what: 'play-album', mbid, album: album || '', cover: cover || '' }); } catch (e) { r = { ok: false, error: e.message }; }
+    if (!r || !r.ok || !r.queue || !r.queue.length) { toast('Can’t play: ' + ((r && r.error) || 'no streamable tracks')); return; }
+    _dnPlay.queue = r.queue; _dnPlay.album = r.album || album || ''; _dnPlay.cover = r.cover || cover || null;
+    dnLoadTrack(0, true);
+};
+function dnLoadTrack(i, autoplay) {
+    if (i < 0 || i >= _dnPlay.queue.length) return;
+    _dnPlay.idx = i; const t = _dnPlay.queue[i]; const a = dnEnsurePlayer();
+    document.getElementById('dnPlayer').hidden = false; document.body.classList.add('has-dnplayer');
+    _dnPlay.cur = 0; _dnPlay.dur = t.duration || 0;
+    a.src = t.src; try { a.load(); } catch (e) {}
+    dnRenderPlayer();
+    if (autoplay) a.play().catch(() => dnRenderPlayer());
+}
+window.dnTogglePlay = function () { const a = dnEnsurePlayer(); if (a.paused) a.play().catch(() => {}); else a.pause(); };
+window.dnNext = function () { if (_dnPlay.idx < _dnPlay.queue.length - 1) dnLoadTrack(_dnPlay.idx + 1, true); else { if (_dnAudio) _dnAudio.pause(); _dnPlay.playing = false; dnRenderPlayer(); dnReportNow(true); } };
+window.dnPrev = function () { const a = dnEnsurePlayer(); if (a.currentTime > 3 || _dnPlay.idx <= 0) a.currentTime = 0; else dnLoadTrack(_dnPlay.idx - 1, true); };
+window.dnSeek = function (ev) { const a = dnEnsurePlayer(); const r = ev.currentTarget.getBoundingClientRect(); const pct = Math.max(0, Math.min(1, (ev.clientX - r.left) / (r.width || 1))); if (a.duration) { a.currentTime = pct * a.duration; _dnPlay.cur = a.currentTime; dnPlayerTick(); } };
+window.dnStop = function () { const a = _dnAudio; if (a) { a.pause(); a.removeAttribute('src'); try { a.load(); } catch (e) {} } _dnPlay = { queue: [], idx: -1, album: '', cover: null, playing: false, cur: 0, dur: 0 }; const el = document.getElementById('dnPlayer'); if (el) el.hidden = true; document.body.classList.remove('has-dnplayer'); dnReportClear(); };
+window.dnPlayFromBtn = function (btn) { const d = btn.dataset || {}; dnPlayAlbum(d.mbid, d.album || '', d.cover || ''); };
+function dnReportNow(paused) { const t = _dnPlay.queue[_dnPlay.idx]; if (!t) return; _dnReportAt = Date.now(); const a = _dnAudio; jpost('/api/dn/action', { action: 'report-nowplaying', track: t.title, artist: t.artist, album: _dnPlay.album, cover: _dnPlay.cover || '', source: t.source || 'local', paused: !!paused, progressMs: Math.round((a ? a.currentTime : 0) * 1000), durationMs: Math.round((a && a.duration ? a.duration : (t.duration || 0)) * 1000) }).catch(() => {}); }
+function dnReportClear() { jpost('/api/dn/action', { action: 'clear-nowplaying' }).catch(() => {}); }
+function dnPlayerTick() { const fill = document.getElementById('dnpFill'); if (fill) fill.style.width = (_dnPlay.dur ? Math.min(100, _dnPlay.cur / _dnPlay.dur * 100) : 0) + '%'; const cur = document.getElementById('dnpCur'); if (cur) cur.textContent = dnFmtTime(_dnPlay.cur); const dur = document.getElementById('dnpDur'); if (dur) dur.textContent = dnFmtTime(_dnPlay.dur); }
+function dnRenderPlayer() {
+    const el = document.getElementById('dnPlayerUI'); if (!el) return;
+    const t = _dnPlay.queue[_dnPlay.idx]; if (!t) { el.innerHTML = ''; return; }
+    const cov = _dnPlay.cover ? dnCover(_dnPlay.cover, null) : '';
+    const art = cov ? `<img class="dnp-art" src="${esc(cov)}" alt="" onerror="this.outerHTML='<div class=\\'dnp-art dnp-fb\\'>♪</div>'">` : `<div class="dnp-art dnp-fb">♪</div>`;
+    const pct = _dnPlay.dur ? Math.min(100, _dnPlay.cur / _dnPlay.dur * 100) : 0;
+    const hasPrev = _dnPlay.idx > 0, hasNext = _dnPlay.idx < _dnPlay.queue.length - 1;
+    el.innerHTML = `${art}
+        <div class="dnp-meta"><span class="dnp-t">${esc(t.title || 'Track')}</span><span class="dnp-a">${esc([t.artist, _dnPlay.album].filter(Boolean).join(' — '))}</span></div>
+        <div class="dnp-ctrl">
+            <button class="dnp-btn" onclick="dnPrev()" aria-label="Previous"${hasPrev ? '' : ' disabled'}>⏮</button>
+            <button class="dnp-btn dnp-play" onclick="dnTogglePlay()" aria-label="${_dnPlay.playing ? 'Pause' : 'Play'}">${_dnPlay.playing ? '⏸' : '▶'}</button>
+            <button class="dnp-btn" onclick="dnNext()" aria-label="Next"${hasNext ? '' : ' disabled'}>⏭</button>
+        </div>
+        <div class="dnp-seek"><span class="dnp-time mono" id="dnpCur">${dnFmtTime(_dnPlay.cur)}</span><span class="dnp-track" onclick="dnSeek(event)" role="slider" aria-label="Seek" tabindex="0"><i id="dnpFill" style="width:${pct}%"></i></span><span class="dnp-time mono" id="dnpDur">${dnFmtTime(_dnPlay.dur)}</span></div>
+        <button class="dnp-x" onclick="dnStop()" aria-label="Stop and close player">✕</button>`;
+}
 /* In-dashboard search: results render right here in the lane — DN never has to open.
    Each result shows its library status; clicking through to DN stays available per row. */
 let _dnQuery = '', _dnResHtml = '';   // survive the 20s live repaints
@@ -4423,7 +4511,8 @@ window.dnSearch = async function (base, ev) {
     if (!r.ok) { _dnResHtml = `<div class="connect-note" style="margin-top:8px"><div class="cn-sub">Search failed: ${esc(r.error || 'unknown')}</div></div>`; host.innerHTML = _dnResHtml; return; }
     const badge = x => x.inLibrary ? '<span class="dn-badge in">in library</span>' : x.requested ? '<span class="dn-badge req">requested</span>' : '';
     const reqBtn = x => (x.inLibrary || x.requested || !x.mbid) ? '' : `<button class="dn-req-btn" data-mbid="${esc(x.mbid)}" data-artist="${esc(x.artist || '')}" data-album="${esc(x.title || '')}" data-year="${esc(String(x.year || ''))}" onclick="event.stopPropagation();dnRequest(this,'album')" onkeydown="event.stopPropagation()">+ Request</button>`;
-    const alb = (r.albums || []).slice(0, 12).map(x => `<div class="dn-rel" title="${esc([x.title, x.artist, x.year].filter(Boolean).join(' · '))}" onclick="window.open('${esc(base)}/album/${esc(x.mbid)}','_blank','noopener')" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}" style="cursor:pointer">${x.cover ? `<img class="dn-rel-art" src="${esc(x.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">${esc((x.title || '♪')[0].toUpperCase())}</div>`}<div class="dn-rel-t">${esc(x.title || '')}${badge(x)}</div><div class="dn-rel-a">${esc([x.artist, x.year].filter(Boolean).join(' · '))}</div>${reqBtn(x)}</div>`).join('');
+    const playBtn = x => (x.inLibrary && x.mbid) ? `<button class="dn-play-btn" data-mbid="${esc(x.mbid)}" data-album="${esc(x.title || '')}" data-cover="${esc(x.cover || '')}" onclick="event.stopPropagation();dnPlayFromBtn(this)" onkeydown="event.stopPropagation()">▶ Play</button>` : '';
+    const alb = (r.albums || []).slice(0, 12).map(x => `<div class="dn-rel" title="${esc([x.title, x.artist, x.year].filter(Boolean).join(' · '))}" onclick="window.open('${esc(base)}/album/${esc(x.mbid)}','_blank','noopener')" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}" style="cursor:pointer">${x.cover ? `<img class="dn-rel-art" src="${esc(x.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">${esc((x.title || '♪')[0].toUpperCase())}</div>`}<div class="dn-rel-t">${esc(x.title || '')}${badge(x)}</div><div class="dn-rel-a">${esc([x.artist, x.year].filter(Boolean).join(' · '))}</div>${playBtn(x)}${reqBtn(x)}</div>`).join('');
     const art = (r.artists || []).slice(0, 6).map(x => `<button class="dn-chip" onclick="window.open('${esc(base)}/artist/${esc(x.mbid)}','_blank','noopener')" title="open in Dropped Needle"><span class="dn-chip-k">${esc(x.title || '')}</span>${x.inLibrary ? '<span class="dn-chip-v" style="color:var(--ok)">✓</span>' : ''}</button>`).join('');
     _dnResHtml = (r.albums && r.albums.length) || (r.artists && r.artists.length)
         ? `${art ? `<div class="svc-group__label" style="margin-top:10px">Artists</div><div class="dn-chips">${art}</div>` : ''}${alb ? `<div class="svc-group__label" style="margin-top:8px">Albums</div><div class="dn-rels">${alb}</div>` : ''}`
@@ -4479,9 +4568,9 @@ function dnSection() {
         st.unmatched ? chip('Unmatched', st.unmatched, 'warn', link('/library/unmatched')) : '',
         dn.client != null ? chip('slskd', dn.client ? 'connected' : 'check setup', dn.client ? '' : 'warn', link('/settings')) : ''
     ].filter(Boolean).join('');
-    const relCard = (title, artist, sub2, art) => `<div class="dn-rel" title="${esc(title + (artist ? ' · ' + artist : ''))}">${art ? `<img class="dn-rel-art" src="${esc(art)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">${esc((title[0] || '♪').toUpperCase())}</div>`}<div class="dn-rel-t">${esc(title)}</div><div class="dn-rel-a">${esc([artist, sub2].filter(Boolean).join(' · '))}</div></div>`;
+    const relCard = (title, artist, sub2, art, play) => `<div class="dn-rel" title="${esc(title + (artist ? ' · ' + artist : ''))}">${art ? `<img class="dn-rel-art" src="${esc(art)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">${esc((title[0] || '♪').toUpperCase())}</div>`}<div class="dn-rel-t">${esc(title)}</div><div class="dn-rel-a">${esc([artist, sub2].filter(Boolean).join(' · '))}</div>${play && play.mbid ? `<button class="dn-play-btn" data-mbid="${esc(play.mbid)}" data-album="${esc(title)}" data-cover="${esc(play.cover || '')}" onclick="event.stopPropagation();dnPlayFromBtn(this)">▶ Play</button>` : ''}</div>`;
     const rel = (dn.releases || []).map(x => relCard(x.title || 'release', x.artist || '', [x.type, x.date].filter(Boolean).join(' · '), dnCover(null, x.mbid))).join('');
-    const recent = !rel ? (dn.recentlyAdded || []).map(a => relCard(a.title || 'album', a.artist || '', a.year || '', dnCover(a.cover, a.mbid))).join('') : '';
+    const recent = !rel ? (dn.recentlyAdded || []).map(a => relCard(a.title || 'album', a.artist || '', a.year || '', dnCover(a.cover, a.mbid), { mbid: a.mbid, cover: a.cover })).join('') : '';
     const dlRows = dls.map(d => `<div class="dn-np"><span class="dot ${d.error ? 'crit' : 'live'}"></span><span class="dn-np-t">${esc(String(d.album || 'download'))}</span><span class="dn-np-a">${esc([d.artist, d.status, d.files].filter(Boolean).join(' · '))}${d.error ? ` · <em style="color:var(--crit);font-style:normal">${esc(d.error)}</em>` : ''}</span>${d.progress != null ? `<span class="dn-np-prog mono">${d.progress}%</span>` : ''}</div>`).join('');
     return `<section class="lane dn-lane"><div class="lane-head"><span class="eyebrow">Dropped Needle · music discovery</span><span class="lane-meta">${dn.user ? esc(String(dn.user)) + (dn.role ? ' (' + esc(String(dn.role)) + ')' : '') + ' · ' : ''}${dn.ok ? '<span class="dot ok"></span>backend online' : '<span class="dot warn"></span>backend degraded'}</span></div><hr class="hair">
         <div class="dn-body">
