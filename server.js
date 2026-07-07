@@ -2452,6 +2452,22 @@ async function demoRoute(req, res) {
                 { title: 'Eventually', artist: 'Tame Impala', album: 'Currents', duration: 30, source: 'local', src: s(3) }
             ] }); return true;
         }
+        if (what === 'playlists') {
+            send({ ok: true, playlists: [
+                { id: '00000000-0000-4000-9000-000000000001', name: 'Your Weekly Mix', count: 57, duration: 12960, cover: null, isOwner: true, owner: 'You', isPublic: false, redacted: false },
+                { id: '00000000-0000-4000-9000-000000000002', name: 'Focus', count: 24, duration: 5400, cover: null, isOwner: true, owner: 'You', isPublic: true, redacted: false },
+                { id: '00000000-0000-4000-9000-000000000003', name: 'Road Trip', count: 40, duration: 9600, cover: null, isOwner: false, owner: 'Alexander', isPublic: true, redacted: false },
+                { id: '00000000-0000-4000-9000-000000000004', name: 'Late Night', count: 31, duration: 7200, cover: null, isOwner: false, owner: 'Sam', isPublic: true, redacted: false }
+            ] }); return true;
+        }
+        if (what === 'play-playlist') {
+            const s = n => '/api/dn/stream?u=' + encodeURIComponent('/api/v1/stream/local/demo' + n);
+            send({ ok: true, album: String(body.name || 'Your Weekly Mix'), cover: null, queue: [
+                { title: 'Dress', artist: 'Taylor Swift', album: 'reputation', duration: 30, source: 'local', cover: null, src: s(1) },
+                { title: 'Nikes', artist: 'Frank Ocean', album: 'Blonde', duration: 30, source: 'local', cover: null, src: s(2) },
+                { title: 'Redbone', artist: 'Childish Gambino', album: 'Awaken, My Love!', duration: 30, source: 'local', cover: null, src: s(3) }
+            ] }); return true;
+        }
         send({ ok: true, items: [] }); return true;
     }
     if (u === '/api/live' && req.method === 'POST') {
@@ -3171,6 +3187,32 @@ const server = http.createServer(async (req, res) => {
                 }).filter(Boolean);
                 if (!queue.length) { jsonRes(res, 200, { ok: false, error: 'these tracks aren\'t streamable yet — still downloading?' }); return; }
                 jsonRes(res, 200, { ok: true, queue, album: String(payload.album || ''), cover: payload.cover || null });
+            } else if (what === 'playlists') {
+                // Your playlists + others' public ones (DN scopes this to what you may see).
+                // Each carries is_owner / owner_name so the client can offer a "whose" filter.
+                const r = await get('/api/v1/playlists');
+                const arr = Array.isArray(r.playlists) ? r.playlists : (Array.isArray(r) ? r : []);
+                jsonRes(res, 200, { ok: true, playlists: arr.map(pl => ({
+                    id: pl.id, name: pl.name || 'Playlist', count: pl.track_count || 0, duration: pl.total_duration || null,
+                    cover: (Array.isArray(pl.cover_urls) && pl.cover_urls[0]) ? coverRef({ cover_url: pl.cover_urls[0] }) : (pl.custom_cover_url ? coverRef({ cover_url: pl.custom_cover_url }) : null),
+                    isOwner: !!pl.is_owner, owner: pl.is_owner ? 'You' : (pl.owner_name || 'Shared'), isPublic: !!pl.is_public, redacted: !!pl.is_redacted
+                })) });
+            } else if (what === 'play-playlist') {
+                // Playlist detail tracks already carry source_type + track_source_id, so we can
+                // build the stream queue straight away (no resolve step). Unplayable/redacted skip.
+                const id = String(payload.id || '').trim();
+                if (!/^[0-9a-fA-F-]{8,40}$/.test(id)) { jsonRes(res, 200, { ok: false, error: 'invalid playlist id' }); return; }
+                const d = await get('/api/v1/playlists/' + id);
+                const tracks = Array.isArray(d.tracks) ? d.tracks : [];
+                if (!tracks.length) { jsonRes(res, 200, { ok: false, error: d.is_redacted ? 'this playlist is private' : 'playlist has no tracks' }); return; }
+                const queue = tracks.map(t => {
+                    const src = String(t.source_type || '').toLowerCase();
+                    if (!t.track_source_id || !/^(local|navidrome|jellyfin|plex)$/.test(src)) return null;
+                    const path = '/api/v1/stream/' + src + '/' + t.track_source_id;
+                    return { title: t.track_name || 'Track', artist: t.artist_name || '', album: t.album_name || '', duration: t.duration || null, source: src, cover: t.cover_url ? coverRef({ cover_url: t.cover_url }) : null, src: '/api/dn/stream?u=' + encodeURIComponent(path) };
+                }).filter(Boolean);
+                if (!queue.length) { jsonRes(res, 200, { ok: false, error: 'no streamable tracks in this playlist' }); return; }
+                jsonRes(res, 200, { ok: true, queue, album: String(d.name || payload.name || 'Playlist'), cover: payload.cover || ((Array.isArray(d.cover_urls) && d.cover_urls[0]) ? coverRef({ cover_url: d.cover_urls[0] }) : null) });
             } else jsonRes(res, 400, { ok: false, error: 'unknown query' });
         } catch (e) { jsonRes(res, 200, { ok: false, error: e.message }); }
     } else if (req.url === '/api/dn/plex/pin' && req.method === 'POST') {

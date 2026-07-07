@@ -4,6 +4,17 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] — 2026-07-07
+
+### Added
+- **Play playlists from Command Center, with a "whose playlists" picker.** The Dropped
+  Needle lane gets a **Playlists** button that opens a drawer of your playlists plus the
+  household's shared ones. Filter chips let you pick **whose** — *You*, or any other user
+  (Alexander, Sam, …) — so you can jump straight to your own among a shared library. Hit
+  **▶ Play** on any playlist and it streams track-by-track through the in-dashboard player
+  (play / pause / seek / previous / next), each track showing its own cover art. Private
+  playlists you can't see are marked as such rather than offered.
+
 ## [2.2.0] — 2026-07-07
 
 ### Added

@@ -4474,13 +4474,14 @@ window.dnPrev = function () { const a = dnEnsurePlayer(); if (a.currentTime > 3 
 window.dnSeek = function (ev) { const a = dnEnsurePlayer(); const r = ev.currentTarget.getBoundingClientRect(); const pct = Math.max(0, Math.min(1, (ev.clientX - r.left) / (r.width || 1))); if (a.duration) { a.currentTime = pct * a.duration; _dnPlay.cur = a.currentTime; dnPlayerTick(); } };
 window.dnStop = function () { const a = _dnAudio; if (a) { a.pause(); a.removeAttribute('src'); try { a.load(); } catch (e) {} } _dnPlay = { queue: [], idx: -1, album: '', cover: null, playing: false, cur: 0, dur: 0 }; const el = document.getElementById('dnPlayer'); if (el) el.hidden = true; document.body.classList.remove('has-dnplayer'); dnReportClear(); };
 window.dnPlayFromBtn = function (btn) { const d = btn.dataset || {}; dnPlayAlbum(d.mbid, d.album || '', d.cover || ''); };
-function dnReportNow(paused) { const t = _dnPlay.queue[_dnPlay.idx]; if (!t) return; _dnReportAt = Date.now(); const a = _dnAudio; jpost('/api/dn/action', { action: 'report-nowplaying', track: t.title, artist: t.artist, album: _dnPlay.album, cover: _dnPlay.cover || '', source: t.source || 'local', paused: !!paused, progressMs: Math.round((a ? a.currentTime : 0) * 1000), durationMs: Math.round((a && a.duration ? a.duration : (t.duration || 0)) * 1000) }).catch(() => {}); }
+function dnRawCover(u) { if (!u) return undefined; const m = /\/api\/dn\/img\?path=(.+)$/.exec(u); return m ? decodeURIComponent(m[1]) : u; }   // unwrap the CC proxy so DN gets a path it understands
+function dnReportNow(paused) { const t = _dnPlay.queue[_dnPlay.idx]; if (!t) return; _dnReportAt = Date.now(); const a = _dnAudio; jpost('/api/dn/action', { action: 'report-nowplaying', track: t.title, artist: t.artist, album: _dnPlay.album, cover: dnRawCover(t.cover || _dnPlay.cover), source: t.source || 'local', paused: !!paused, progressMs: Math.round((a ? a.currentTime : 0) * 1000), durationMs: Math.round((a && a.duration ? a.duration : (t.duration || 0)) * 1000) }).catch(() => {}); }
 function dnReportClear() { jpost('/api/dn/action', { action: 'clear-nowplaying' }).catch(() => {}); }
 function dnPlayerTick() { const fill = document.getElementById('dnpFill'); if (fill) fill.style.width = (_dnPlay.dur ? Math.min(100, _dnPlay.cur / _dnPlay.dur * 100) : 0) + '%'; const cur = document.getElementById('dnpCur'); if (cur) cur.textContent = dnFmtTime(_dnPlay.cur); const dur = document.getElementById('dnpDur'); if (dur) dur.textContent = dnFmtTime(_dnPlay.dur); }
 function dnRenderPlayer() {
     const el = document.getElementById('dnPlayerUI'); if (!el) return;
     const t = _dnPlay.queue[_dnPlay.idx]; if (!t) { el.innerHTML = ''; return; }
-    const cov = _dnPlay.cover ? dnCover(_dnPlay.cover, null) : '';
+    const cov = t.cover || _dnPlay.cover || '';   // server-resolved URL already — use directly
     const art = cov ? `<img class="dnp-art" src="${esc(cov)}" alt="" onerror="this.outerHTML='<div class=\\'dnp-art dnp-fb\\'>♪</div>'">` : `<div class="dnp-art dnp-fb">♪</div>`;
     const pct = _dnPlay.dur ? Math.min(100, _dnPlay.cur / _dnPlay.dur * 100) : 0;
     const hasPrev = _dnPlay.idx > 0, hasNext = _dnPlay.idx < _dnPlay.queue.length - 1;
@@ -4519,15 +4520,16 @@ window.dnSearch = async function (base, ev) {
         : `<div class="lbl" style="padding:8px 2px">No matches for “${esc(q)}”.</div>`;
     host.innerHTML = _dnResHtml;
 };
-/* Requests / downloads open in the shared drawer — the data comes to you. */
+/* Requests / downloads / playlists open in the shared drawer — the data comes to you. */
 window.openDnDrawer = async function (kind) {
-    const title = kind === 'requests' ? 'Dropped Needle · requests' : 'Dropped Needle · downloads';
-    openDrawer(esc(title), 'live from your instance', '<div class="g-skel" style="height:120px"></div>', '');
+    const titles = { requests: 'Dropped Needle · requests', downloads: 'Dropped Needle · downloads', playlists: 'Dropped Needle · playlists' };
+    openDrawer(esc(titles[kind] || 'Dropped Needle'), kind === 'playlists' ? 'pick whose playlists, then play' : 'live from your instance', '<div class="g-skel" style="height:120px"></div>', '');
     let r;
     try { r = await jpost('/api/dn/query', { what: kind }); } catch (e) { r = { ok: false, error: e.message }; }
     const body = document.querySelector('#drawer .drawer-body');
     if (!body) return;
     if (!r.ok) { body.innerHTML = `<div class="connect-note"><div class="cn-sub">${esc(r.error || 'failed')}</div></div>`; return; }
+    if (kind === 'playlists') { _dnPlaylists = r.playlists || []; _dnPlFilter = '*'; dnRenderPlaylists(); return; }
     if (kind === 'requests') {
         const act = (r.active || []).map(x => `<div class="dn-np"><span class="dot ${x.error ? 'crit' : 'live'}"></span><span class="dn-np-t">${esc(x.album || '')}</span><span class="dn-np-a">${esc([x.artist, x.status, x.eta, x.by ? 'by ' + x.by : ''].filter(Boolean).join(' · '))}${x.error ? ` · <em style="color:var(--crit);font-style:normal">${esc(x.error)}</em>` : ''}</span>${x.progress != null ? `<span class="dn-np-prog mono">${Math.round(x.progress)}%</span>` : ''}</div>`).join('');
         const hist = (r.history || []).map(x => `<div class="dn-np"><span class="dot ${/complete|approved|imported/i.test(x.status) ? 'ok' : /reject|fail|denied/i.test(x.status) ? 'crit' : 'idle'}"></span><span class="dn-np-t">${esc(x.album || '')}</span><span class="dn-np-a">${esc([x.artist, x.status, x.by ? 'by ' + x.by : ''].filter(Boolean).join(' · '))}</span></div>`).join('');
@@ -4536,6 +4538,36 @@ window.openDnDrawer = async function (kind) {
         const rows = (r.items || []).map(d => `<div class="dn-np"><span class="dot ${d.error ? 'crit' : /^(completed|imported)$/i.test(d.status || '') ? 'ok' : 'live'}"></span><span class="dn-np-t">${esc(d.album || d.track || 'item')}</span><span class="dn-np-a">${esc([d.artist, d.status, d.files, d.source].filter(Boolean).join(' · '))}${d.error ? ` · <em style="color:var(--crit);font-style:normal">${esc(d.error)}</em>` : ''}</span>${d.progress != null ? `<span class="dn-np-prog mono">${d.progress}%</span>` : ''}</div>`).join('');
         body.innerHTML = rows || '<div class="lbl" style="padding:6px 2px">No downloads on record.</div>';
     }
+};
+/* Playlists drawer — your playlists plus others' public ones. The "whose" chips filter
+   by owner so you can jump to your own; each card plays through the in-dashboard player. */
+let _dnPlaylists = [], _dnPlFilter = '*';
+window.dnSetPlFilter = function (f) { _dnPlFilter = f; dnRenderPlaylists(); };
+function dnRenderPlaylists() {
+    const body = document.querySelector('#drawer .drawer-body'); if (!body) return;
+    const pls = _dnPlaylists;
+    if (!pls.length) { body.innerHTML = '<div class="lbl" style="padding:6px 2px">No playlists here yet — make one in Dropped Needle.</div>'; return; }
+    const owners = [];
+    if (pls.some(p => p.isOwner)) owners.push('You');
+    pls.forEach(p => { if (!p.isOwner && p.owner && owners.indexOf(p.owner) < 0) owners.push(p.owner); });
+    const fchips = ['*'].concat(owners).map(o => `<button class="dn-chip"${_dnPlFilter === o ? ' data-state="live"' : ''} onclick="dnSetPlFilter('${esc(o).replace(/'/g, "\\'")}')"><span class="dn-chip-k">${esc(o === '*' ? 'All' : o)}</span></button>`).join('');
+    const shown = pls.filter(p => _dnPlFilter === '*' || (_dnPlFilter === 'You' ? p.isOwner : p.owner === _dnPlFilter));
+    const cards = shown.map(p => {
+        const cov = p.cover ? `<img class="dn-rel-art" src="${esc(p.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">♪</div>`;
+        const meta = [p.count + ' track' + (p.count === 1 ? '' : 's'), p.isOwner ? 'You' : p.owner].filter(Boolean).join(' · ');
+        const playable = !p.redacted && p.count > 0;
+        return `<div class="dn-rel" title="${esc(p.name)}">${cov}<div class="dn-rel-t">${esc(p.name)}</div><div class="dn-rel-a">${esc(meta)}</div>${playable ? `<button class="dn-play-btn" data-id="${esc(p.id)}" data-name="${esc(p.name)}" data-cover="${esc(p.cover || '')}" onclick="dnPlayPlaylist(this)">▶ Play</button>` : `<div class="lbl" style="padding:5px 0;color:var(--t4)">private</div>`}</div>`;
+    }).join('');
+    body.innerHTML = `<div class="svc-group__label" style="padding-top:0">Whose playlists</div><div class="dn-chips">${fchips}</div><div class="dn-rels" style="margin-top:10px">${cards || '<div class="lbl" style="padding:6px 2px">None for this filter.</div>'}</div>`;
+}
+window.dnPlayPlaylist = async function (btn) {
+    const d = btn.dataset || {}; if (!d.id) return;
+    toast('Loading ' + (d.name ? '“' + d.name + '”' : 'playlist') + '…');
+    let r; try { r = await jpost('/api/dn/query', { what: 'play-playlist', id: d.id, name: d.name || '', cover: d.cover || '' }); } catch (e) { r = { ok: false, error: e.message }; }
+    if (!r || !r.ok || !r.queue || !r.queue.length) { toast('Can’t play: ' + ((r && r.error) || 'no streamable tracks')); return; }
+    _dnPlay.queue = r.queue; _dnPlay.album = r.album || d.name || ''; _dnPlay.cover = r.cover || d.cover || null;
+    dnLoadTrack(0, true);
+    if (typeof closeDrawer === 'function') closeDrawer();
 };
 function dnSection() {
     const p = Providers.byId(DN_ID);
@@ -4563,6 +4595,7 @@ function dnSection() {
     const chips = [
         dn.pending != null ? drawerChip('Pending requests', dn.pending, dn.pending > 0 ? 'warn' : '', 'requests') : '',
         dls.length ? drawerChip('Downloading', dls.length, 'live', 'downloads') : drawerChip('Downloads', 'view', '', 'downloads'),
+        drawerChip('Playlists', 'play', '', 'playlists'),
         st.artists != null ? chip('Artists', st.artists, '', link('/library/artists')) : '',
         st.albums != null ? chip('Albums', st.albums, '', link('/library/albums')) : '',
         st.unmatched ? chip('Unmatched', st.unmatched, 'warn', link('/library/unmatched')) : '',
