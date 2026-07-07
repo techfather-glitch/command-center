@@ -4,6 +4,36 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.16] — 2026-07-06
+
+### Fixed
+- **TrueNAS "API connection failed."** Node's built-in WebSocket cannot skip TLS
+  verification, so every self-signed TrueNAS failed the `wss://` handshake —
+  and the code then retried over **plain `ws://`, sending the API key
+  unencrypted**, which is precisely what TrueNAS punishes with automatic key
+  revocation. Replaced with a minimal RFC 6455 client that follows the outbound
+  TLS policy; the plaintext fallback is gone (an `http://` TrueNAS endpoint is
+  now refused outright, with an explanation).
+- **Self-signed certificates on the LAN now work everywhere, with zero
+  configuration.** One outbound TLS policy across all connectors (provider
+  fetches, native probes, Grafana render, TrueNAS): self-signed is tolerated
+  for **private addresses** (RFC1918/loopback IPs, `.local`/`.lan`/`.internal`/
+  `.home.arpa`, single-label names); **public hostnames are always verified**.
+  No more `ALLOW_INSECURE_TLS` hoop for UniFi/TrueNAS/Proxmox-class services
+  (the env still force-relaxes everything; `NODE_EXTRA_CA_CERTS` remains the
+  strict option).
+
+### Added
+- **One credential, everywhere.** Native fleet probes fall back to their
+  integration's stored credential (TrueNAS, Plex, Emby, Sonarr, Radarr,
+  SABnzbd, Overseerr/Seer, qBittorrent) — paste a key once in the provider
+  card and every surface that talks to that service uses it.
+- **Errors that name the actual problem.** Network failures across UniFi and
+  every provider fetch are classified: *cannot reach from this server
+  (VLAN/firewall)* vs *connection refused (wrong port)* vs *DNS* vs *TLS* vs
+  *credentials rejected* — so an unreachable host and a bad password never look
+  the same again.
+
 ## [2.0.15] — 2026-07-06
 
 ### Added
@@ -340,6 +370,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.16]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.16
 [2.0.15]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.15
 [2.0.14]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.14
 [2.0.13]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.13

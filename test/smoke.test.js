@@ -20,7 +20,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const cc = require('../server.js');
 
-const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl } = cc;
+const { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl, isPrivateHostname, tlsRelaxedFor, describeNetErr } = cc;
 
 // ── helpers ──────────────────────────────────────────────────────────────
 const field = (out, rx) => (out.fields || []).find(f => new RegExp(rx, 'i').test(f.label));
@@ -327,6 +327,29 @@ test('serviceProbeBase: loopback defaults are "not configured", user addresses w
   fs.writeFileSync(sPath, JSON.stringify({ endpoints: { Tracearr: { url: 'http://10.0.0.9:30316/' } }, customServices: [{ name: 'Tracearr', host: '192.168.50.96', port: 30316 }] }));
   assert.equal(serviceProbeBase('Tracearr'), 'http://10.0.0.9:30316');
   fs.writeFileSync(sPath, JSON.stringify({}));
+});
+
+// ── 5c. outbound TLS policy: self-signed tolerated ONLY for private addresses ──
+test('TLS policy: private LAN hosts relaxed, public hostnames verified', () => {
+  // private → relaxed (self-signed UniFi/TrueNAS/Proxmox just work)
+  assert.equal(isPrivateHostname('192.168.4.1'), true);
+  assert.equal(isPrivateHostname('10.1.2.3'), true);
+  assert.equal(isPrivateHostname('nas.local'), true);
+  assert.equal(isPrivateHostname('truenas'), true, 'single-label LAN name');
+  assert.equal(tlsRelaxedFor('https://192.168.50.96'), true);
+  // public → verified (api.tailscale.com etc. must NOT accept self-signed)
+  assert.equal(isPrivateHostname('api.tailscale.com'), false);
+  assert.equal(isPrivateHostname('8.8.8.8'), false);
+  assert.equal(tlsRelaxedFor('https://api.cloudflare.com'), false);
+});
+
+test('describeNetErr names the real failure, not a generic message', () => {
+  const e = (code, message) => Object.assign(new Error(message || code), { code });
+  assert.match(describeNetErr(e('EHOSTUNREACH'), 'https://192.168.4.1'), /cannot reach.*VLAN\/firewall/i);
+  assert.match(describeNetErr(e('ECONNREFUSED'), 'x'), /refused.*port/i);
+  assert.match(describeNetErr(e('ENOTFOUND'), 'x'), /DNS/i);
+  assert.match(describeNetErr(e('DEPTH_ZERO_SELF_SIGNED_CERT', 'self-signed certificate'), 'x'), /TLS certificate/i);
+  assert.equal(describeNetErr(new Error('weird thing')), 'weird thing', 'unknown errors pass through');
 });
 
 // ── 6a2. stateless session tokens: validate, survive "restart", reject forgery ──

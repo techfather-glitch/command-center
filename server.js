@@ -220,11 +220,61 @@ function mergeSensitiveSettings(incoming, existing) {
     writeSecretVault(nextVault);
     return clean;
 }
+// A native fleet probe and its catalog integration are the same real service —
+// one pasted credential must serve both. When a probe's own scope is empty, fall
+// back to the integration's credential (maps probe field -> integration field).
+const CRED_ALIASES = {
+    'TrueNAS Web UI':    ['truenasscale',  { key: 'key' }],
+    'Plex Media Server': ['plex',          { key: 'token' }],
+    'Emby':              ['emby',          { key: 'apikey' }],
+    'Sonarr':            ['sonarr',        { key: 'key' }],
+    'Radarr':            ['radarr',        { key: 'key' }],
+    'Sabnzbd':           ['sabnzbd',       { key: 'key' }],
+    'Seer':              ['overseerr',     { key: 'key' }],
+    'Qbt':               ['qbittorrent',   { username: 'username', password: 'password' }],
+};
 function storedCredential(service, key) {
     const vault = readSecretVault();
-    return ((vault[`apiKeys.${service}`] || {})[key]) || '';
+    const own = ((vault[`apiKeys.${service}`] || {})[key]) || '';
+    if (own) return own;
+    const alias = CRED_ALIASES[service];
+    if (alias && alias[1][key]) return ((vault[`apiKeys.${alias[0]}`] || {})[alias[1][key]]) || '';
+    return '';
 }
 function storedEndpoint(service) { return ((readDashboardSettings().endpoints || {})[service] || {}).url || ''; }
+
+/* ── Outbound TLS policy ─────────────────────────────────────────────────
+   Homelab services on the LAN (UniFi, TrueNAS, Proxmox…) ship self-signed
+   certificates; verifying strictly would break them all out of the box and
+   force everyone through an env-var hoop. Policy: self-signed is tolerated
+   for PRIVATE addresses (RFC1918/loopback IPs, .local/.lan/.internal/
+   .home.arpa names, single-label LAN names); PUBLIC hostnames are always
+   verified. ALLOW_INSECURE_TLS=1 still relaxes everything, and
+   NODE_EXTRA_CA_CERTS remains the strict-and-correct option. */
+function isPrivateHostname(hostname) {
+    const h = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+    if (!h) return false;
+    if (net.isIP(h)) { const z = ipZone(h); return z === 'private' || z === 'loopback'; }
+    if (!h.includes('.')) return true;
+    return /\.(local|lan|internal|home|home\.arpa)$/.test(h);
+}
+function tlsRelaxedFor(urlOrHost) {
+    if (ALLOW_INSECURE_TLS) return true;
+    try { return isPrivateHostname(new URL(String(urlOrHost)).hostname); }
+    catch (e) { return isPrivateHostname(urlOrHost); }
+}
+// Turn a raw network error into a sentence that names the actual problem —
+// "unreachable from the server" and "bad password" must never look the same.
+function describeNetErr(err, where) {
+    const code = (err && err.code) || '';
+    const msg = (err && err.message) || String(err || 'error');
+    const at = where ? ` (${where})` : '';
+    if (code === 'ECONNREFUSED') return `connection refused${at} — the port is closed there; check the URL and port`;
+    if (code === 'EHOSTUNREACH' || code === 'ENETUNREACH' || code === 'ETIMEDOUT' || /timed? ?out/i.test(msg)) return `cannot reach${at} from this server — host down, or a VLAN/firewall blocks this server's subnet`;
+    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') return `DNS lookup failed${at} — use an IP address or a name this server can resolve`;
+    if (/certificate|self.signed|CERT_|UNABLE_TO_VERIFY|DEPTH_ZERO/i.test(msg + ' ' + code)) return `TLS certificate rejected${at} — private LAN addresses accept self-signed automatically; for public names install a valid cert or set NODE_EXTRA_CA_CERTS`;
+    return msg;
+}
 function storedUnifiSettings() {
     const settings = readDashboardSettings();
     const u = (settings && settings.unifi && typeof settings.unifi === 'object') ? settings.unifi : {};
@@ -538,7 +588,7 @@ async function unifiLogin(settings) {
                 } else {
                     loginError = typeof resp.body === 'string' ? resp.body : (resp.body?.meta?.msg || resp.body?.error || `login ${resp.status}`);
                 }
-            } catch (err) { loginError = err.message; }
+            } catch (err) { loginError = describeNetErr(err, settings.url); }
         }
     }
     return { cookies: '', error: loginError || `UniFi login failed (${loginStatus || 'no response'})` };
@@ -1008,63 +1058,113 @@ async function queryContainerSummary() {
     return { list, count: list.length, cores, ts: now };
 }
 
-function trueNasRpc(apiKey, endpoint, method, params = [], retryPlainWs = true) {
+/* ── Minimal RFC 6455 WebSocket client (text frames) over http(s) Upgrade ──
+   Node's built-in WebSocket cannot skip TLS verification, which made every
+   self-signed TrueNAS "API connection failed" out of the box. This client
+   applies the same LAN TLS policy as every other outbound call. Client frames
+   are masked as the RFC requires; server frames (incl. fragmented) are
+   reassembled; pings are answered. Sufficient for small JSON-RPC exchanges. */
+function wsOpen(rpcUrl, handlers) {
+    const u = new URL(rpcUrl);
+    const secure = u.protocol === 'wss:';
+    const lib = secure ? require('https') : require('http');
+    const key = crypto.randomBytes(16).toString('base64');
+    const req = lib.request({
+        host: u.hostname, port: u.port || (secure ? 443 : 80), path: u.pathname + u.search,
+        headers: { 'Connection': 'Upgrade', 'Upgrade': 'websocket', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': key },
+        ...(secure ? { rejectUnauthorized: !tlsRelaxedFor(rpcUrl) } : {}),
+        timeout: 10000
+    });
+    const api = { send: () => {}, close: () => { try { req.destroy(); } catch (e) {} } };
+    const frame = (opcode, payload) => {   // client→server frames must be masked
+        const mask = crypto.randomBytes(4);
+        const data = Buffer.from(payload);
+        for (let i = 0; i < data.length; i++) data[i] ^= mask[i & 3];
+        let head;
+        if (data.length < 126) { head = Buffer.alloc(2); head[1] = 0x80 | data.length; }
+        else if (data.length < 65536) { head = Buffer.alloc(4); head[1] = 0x80 | 126; head.writeUInt16BE(data.length, 2); }
+        else { head = Buffer.alloc(10); head[1] = 0x80 | 127; head.writeBigUInt64BE(BigInt(data.length), 2); }
+        head[0] = 0x80 | opcode;   // FIN
+        return Buffer.concat([head, mask, data]);
+    };
+    req.on('upgrade', (res, socket) => {
+        let buf = Buffer.alloc(0);
+        let msgParts = [];
+        api.send = (text) => { try { socket.write(frame(0x1, text)); } catch (e) {} };
+        api.close = () => { try { socket.write(frame(0x8, '')); } catch (e) {} try { socket.destroy(); } catch (e) {} };
+        socket.on('data', (chunk) => {
+            buf = Buffer.concat([buf, chunk]);
+            while (buf.length >= 2) {
+                const fin = (buf[0] & 0x80) !== 0, opcode = buf[0] & 0x0f;
+                const masked = (buf[1] & 0x80) !== 0;
+                let len = buf[1] & 0x7f, off = 2;
+                if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
+                else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
+                const maskKey = masked ? buf.slice(off, off + 4) : null;
+                if (masked) off += 4;
+                if (buf.length < off + len) return;   // wait for the rest
+                let payload = buf.slice(off, off + len);
+                if (maskKey) { payload = Buffer.from(payload); for (let i = 0; i < payload.length; i++) payload[i] ^= maskKey[i & 3]; }
+                buf = buf.slice(off + len);
+                if (opcode === 0x9) { try { socket.write(frame(0xA, payload)); } catch (e) {} continue; }   // ping → pong
+                if (opcode === 0x8) { api.close(); handlers.onClose && handlers.onClose(); return; }
+                if (opcode === 0x1 || opcode === 0x0) {
+                    msgParts.push(payload);
+                    if (fin) { const text = Buffer.concat(msgParts).toString('utf8'); msgParts = []; handlers.onMessage && handlers.onMessage(text); }
+                }
+            }
+        });
+        socket.on('error', (err) => handlers.onError && handlers.onError(err));
+        handlers.onOpen && handlers.onOpen();
+    });
+    req.on('response', (res) => handlers.onError && handlers.onError(new Error(`WebSocket upgrade refused (HTTP ${res.statusCode})`)));
+    req.on('timeout', () => { req.destroy(new Error('timeout')); });
+    req.on('error', (err) => handlers.onError && handlers.onError(err));
+    req.end();
+    return api;
+}
+
+function trueNasRpc(apiKey, endpoint, method, params = []) {
     return new Promise((resolve, reject) => {
         let rpcUrl;
-        let plainFallbackUrl = null;
         try {
-            const base = new URL(endpoint || LIVE_PROBES['TrueNAS Web UI'].defaultUrl);
-            const scheme = base.protocol === 'https:' ? 'wss:' : 'ws:';
-            rpcUrl = `${scheme}//${base.host}/api/current`;
-            if (scheme === 'wss:') plainFallbackUrl = `ws://${base.hostname}/api/current`;
+            const base = new URL(endpoint || serviceProbeBase('TrueNAS Web UI') || 'invalid://');
+            // NEVER a plain-text transport for the API key: TrueNAS (correctly)
+            // auto-revokes any key it sees on http/ws. https → wss only.
+            if (base.protocol !== 'https:') { reject(new Error('TrueNAS must be reached over https — an API key sent over plain http is auto-revoked by TrueNAS')); return; }
+            rpcUrl = `wss://${base.host}/api/current`;
         } catch (_) {
             reject(new Error('Invalid TrueNAS endpoint'));
             return;
         }
-        const ws = new WebSocket(rpcUrl);
         const pending = new Map();
-        let nextId = 1;
-        const timer = setTimeout(() => {
-            try { ws.close(); } catch (_) {}
-            reject(new Error('TrueNAS API timeout'));
-        }, 10000);
-
+        let nextId = 1, settled = false;
+        const finish = (fn, v) => { if (!settled) { settled = true; clearTimeout(timer); try { ws.close(); } catch (e) {} fn(v); } };
+        const timer = setTimeout(() => finish(reject, new Error('TrueNAS API timeout')), 10000);
         const call = (rpcMethod, rpcParams = []) => new Promise((res, rej) => {
             const id = nextId++;
             pending.set(id, { res, rej });
             ws.send(JSON.stringify({ jsonrpc: '2.0', id, method: rpcMethod, params: rpcParams }));
         });
-
-        ws.addEventListener('open', async () => {
-            try {
-                const authed = await call('auth.login_with_api_key', [apiKey]);
-                if (!authed) throw new Error('TrueNAS API authentication failed');
-                const result = await call(method, params);
-                clearTimeout(timer);
-                ws.close();
-                resolve(result);
-            } catch (err) {
-                clearTimeout(timer);
-                try { ws.close(); } catch (_) {}
-                reject(err);
-            }
-        });
-        ws.addEventListener('message', (event) => {
-            let msg;
-            try { msg = JSON.parse(event.data); } catch (_) { return; }
-            if (!pending.has(msg.id)) return;
-            const p = pending.get(msg.id);
-            pending.delete(msg.id);
-            if (msg.error) p.rej(new Error(msg.error.message || 'TrueNAS API error'));
-            else p.res(msg.result);
-        });
-        ws.addEventListener('error', () => {
-            clearTimeout(timer);
-            if (plainFallbackUrl && retryPlainWs) {
-                trueNasRpc(apiKey, plainFallbackUrl, method, params, false).then(resolve, reject);
-                return;
-            }
-            reject(new Error('TrueNAS API connection failed'));
+        const ws = wsOpen(rpcUrl, {
+            onOpen: async () => {
+                try {
+                    const authed = await call('auth.login_with_api_key', [apiKey]);
+                    if (!authed) throw new Error('TrueNAS rejected the API key — renew it in TrueNAS (Credentials → API Keys) and paste it in Settings → Providers → TrueNAS');
+                    const result = await call(method, params);
+                    finish(resolve, result);
+                } catch (err) { finish(reject, err); }
+            },
+            onMessage: (text) => {
+                let msg; try { msg = JSON.parse(text); } catch (_) { return; }
+                if (!pending.has(msg.id)) return;
+                const p = pending.get(msg.id);
+                pending.delete(msg.id);
+                if (msg.error) p.rej(new Error(msg.error.message || 'TrueNAS API error'));
+                else p.res(msg.result);
+            },
+            onError: (err) => finish(reject, new Error(describeNetErr(err, rpcUrl))),
+            onClose: () => finish(reject, new Error('TrueNAS closed the connection'))
         });
     });
 }
@@ -1392,7 +1492,7 @@ function dockerRequest(method, p, host) {
         let target;
         try { target = new URL(p, host); } catch (e) { reject(e); return; }
         const lib = target.protocol === 'https:' ? require('https') : require('http');
-        const opts = { method, timeout: 9000, ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: !ALLOW_INSECURE_TLS }) } : {}) };
+        const opts = { method, timeout: 9000, ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: !tlsRelaxedFor(target) }) } : {}) };
         const rq = lib.request(target, opts, r => {
             let data = '';
             r.on('data', c => data += c);
@@ -1596,14 +1696,14 @@ function igFetch(rawUrl, opt) {
         if (net.isIP(_h)) { const z = ipZone(_h); if (z === 'linklocal' || z === 'metadata' || z === 'unspecified' || z === 'invalid') return resolve({ status: 0, error: 'blocked target' }); }
         const lib = u.protocol === 'https:' ? require('https') : require('http');
         const opts = { method: opt.method || 'GET', headers: Object.assign({ 'User-Agent': 'dashboard-server/1.0', 'Accept': opt.accept === 'prometheus' ? 'text/plain' : 'application/json' }, opt.headers || {}), timeout: opt.timeout || 12000 };
-        if (u.protocol === 'https:' && opt.insecure) opts.rejectUnauthorized = false;
+        if (u.protocol === 'https:' && (opt.insecure || tlsRelaxedFor(u))) opts.rejectUnauthorized = false;
         let body = opt.body; if (body && typeof body !== 'string') { body = JSON.stringify(body); opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json'; }
         const req2 = lib.request(u, opts, (r) => {
             let data = ''; r.on('data', d => { data += d; if (data.length > 4e6) req2.destroy(new Error('too large')); });
             r.on('end', () => { let parsed = data; if (opt.accept !== 'prometheus') { try { parsed = JSON.parse(data); } catch (e) { } } resolve({ status: r.statusCode, body: parsed, raw: data, headers: r.headers || {} }); });
         });
         req2.on('timeout', () => req2.destroy(new Error('timeout')));
-        req2.on('error', (err) => resolve({ status: 0, error: err.message }));
+        req2.on('error', (err) => resolve({ status: 0, error: describeNetErr(err, u.host) }));
         if (body) req2.write(body);
         req2.end();
     });
@@ -2961,7 +3061,7 @@ const server = http.createServer(async (req, res) => {
         if (!target.searchParams.get('to')) target.searchParams.set('to', 'now');
         const lib = target.protocol === 'https:' ? require('https') : require('http');
         const opts = { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'image/png' }, timeout: 25000 };
-        if (target.protocol === 'https:') opts.rejectUnauthorized = !ALLOW_INSECURE_TLS;
+        if (target.protocol === 'https:') opts.rejectUnauthorized = !tlsRelaxedFor(target);
         const gReq = lib.get(target, opts, (gRes) => {
             if (gRes.statusCode < 200 || gRes.statusCode >= 300) {
                 gRes.resume();
@@ -3295,4 +3395,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl, isPrivateHostname, tlsRelaxedFor, describeNetErr, storedCredential };

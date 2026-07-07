@@ -1,6 +1,6 @@
 {
   "name": "command-center",
-  "version": "2.0.15",
+  "version": "2.0.16",
   "description": "Mission control for your homelab — a self-hosted, real-time operations dashboard that unifies servers, containers, network, storage and media behind a common provider interface.",
   "type": "commonjs",
   "main": "server.js",
