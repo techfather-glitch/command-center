@@ -6196,7 +6196,13 @@ window.saveUnifi = async function () {
     const unifi = { url: gv('uniUrl'), site: gv('uniSite') || 'default' };
     const u = gv('uniUser'); if (u) unifi.username = u;
     const p = gv('uniPass'); if (p) unifi.password = p;
-    if (await saveSettings({ unifi }, 'Saving UniFi…')) { await refreshUnifi(); render(); toast('UniFi saved ✓'); }
+    if (await saveSettings({ unifi }, 'Saving UniFi…')) {
+        // Credentials are persisted the instant saveSettings returns. Test the
+        // connection in the BACKGROUND — never block "saved" on reaching a
+        // controller that may be slow or unreachable from the server.
+        toast('UniFi saved ✓ — connecting…'); render();
+        refreshUnifi().then(() => { render(); const u2 = Store.unifi || {}; if (u2.error) toast('Saved, but connect failed: ' + errText(u2.error)); }).catch(() => {});
+    }
 };
 window.saveOneKey = async function (svc, inputId) {
     const v = gv(inputId); if (!v) { toast('Enter a new key to change it'); return; }

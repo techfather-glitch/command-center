@@ -333,7 +333,7 @@ function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cooki
         const options = {
             method,
             headers,
-            timeout: 10000,
+            timeout: 6000,   // a reachable controller answers fast; don't sit on a dead one
             ...(target.protocol === 'https:' ? { agent: new (require('https').Agent)({ rejectUnauthorized: strict && !ALLOW_INSECURE_TLS }) } : {})
         };
         const req = lib.request(target, options, (r) => {
@@ -588,7 +588,16 @@ async function unifiLogin(settings) {
                 } else {
                     loginError = typeof resp.body === 'string' ? resp.body : (resp.body?.meta?.msg || resp.body?.error || `login ${resp.status}`);
                 }
-            } catch (err) { loginError = describeNetErr(err, settings.url); }
+            } catch (err) {
+                loginError = describeNetErr(err, settings.url);
+                // A connection-level failure is host-wide — the other path/body
+                // would just burn another full timeout against the same dead host.
+                // Bail now so an unreachable controller fails in ~6s, not ~40s.
+                const code = (err && err.code) || '';
+                if (['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN'].includes(code) || /timed? ?out/i.test(err && err.message || '')) {
+                    return { cookies: '', error: loginError };
+                }
+            }
         }
     }
     return { cookies: '', error: loginError || `UniFi login failed (${loginStatus || 'no response'})` };

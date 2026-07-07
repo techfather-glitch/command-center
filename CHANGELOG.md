@@ -4,6 +4,20 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.21] — 2026-07-06
+
+### Fixed
+- **Saving UniFi credentials was slow and looked like it didn't save.** The save
+  blocked on an immediate connection test, and against an unreachable controller
+  the login ground through four attempts × a 10s timeout (~40s) before the save
+  "finished" — so it felt like forever and the card still showed disconnected
+  (the credentials always persisted; the *connect* was hanging). Now: the
+  credentials save instantly and the controller is tested in the **background**;
+  a login **bails on the first connection-level error** (with a 6s timeout), so
+  an unreachable controller reports *"cannot reach from this server —
+  VLAN/firewall"* in ~6s instead of ~40s. Measured: save 0.03s, a reachable
+  controller connects in ~0.9s.
+
 ## [2.0.20] — 2026-07-06
 
 ### Fixed
@@ -429,6 +443,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.21]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.21
 [2.0.20]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.20
 [2.0.19]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.19
 [2.0.18]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.18
