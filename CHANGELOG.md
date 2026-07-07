@@ -4,6 +4,28 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-07-07
+
+### Added
+- **Dropped Needle "Now Playing" is now a proper floor on the Media page.** What's
+  spinning in Dropped Needle's own web player — track, artist · album, cover art,
+  source (Navidrome / Jellyfin / Plex / local / YouTube), listener + device,
+  paused/playing state and a live progress bar — now leads the DN lane, mirroring
+  the media session floor. When connected but nothing is playing it shows an honest
+  idle state instead of hiding.
+- **Request music without opening Dropped Needle.** Album search results carry a
+  **+ Request** button that queues the album through DN's request API
+  (`POST /api/v1/requests/new`); items already in the library or already requested
+  are shown as such rather than offered again. A new authenticated, audited
+  `POST /api/dn/action` proxies album and track requests — the vaulted session
+  token never reaches the browser.
+
+### Notes
+- Dropped Needle's playback *transport* (play / pause / skip / seek / volume) is a
+  client-side heartbeat with no server API, so it can't be remote-controlled from
+  the dashboard — Now Playing reflects DN's own web player, and control here means
+  requesting and managing music.
+
 ## [2.0.21] — 2026-07-06
 
 ### Fixed

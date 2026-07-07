@@ -1789,6 +1789,30 @@
     .dn-np-a { font: var(--f-lbl); color: var(--t3); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .dn-np-prog { font-size: 11px; color: var(--t2); font-feature-settings: var(--tnum); }
     .dn-np-u { font: var(--f-lbl); color: var(--t4); }
+    /* — Dropped Needle · Now Playing floor (the headline, like the media session floor) — */
+    .dn-now { border: 1px solid var(--hair); border-radius: var(--r); background: var(--s0); overflow: hidden; }
+    .dn-now-row { display: grid; grid-template-columns: 46px minmax(0, 1.6fr) minmax(0, 1fr) 132px; align-items: center; gap: 12px; padding: 9px 12px; border-top: 1px solid var(--hair); }
+    .dn-now-row:first-child { border-top: 0; }
+    .dn-now-art { width: 46px; height: 46px; border-radius: 6px; object-fit: cover; background: var(--s2); display: block; flex: 0 0 auto; }
+    .dn-now-fb { display: flex; align-items: center; justify-content: center; font: 600 20px var(--mono); color: var(--t4); }
+    .dn-now-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .dn-now-t { font: var(--f-row); font-weight: 560; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dn-now-a { font: var(--f-lbl); color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dn-now-who { font: var(--f-lbl); color: var(--t3); display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .dn-now-src { color: var(--t2); }
+    .dn-now-prog { display: flex; align-items: center; gap: 8px; }
+    .dn-now-bar { flex: 1; height: 4px; border-radius: 3px; background: var(--s2); overflow: hidden; }
+    .dn-now-bar > i { display: block; height: 100%; background: var(--live); border-radius: 3px; transition: width .5s ease; }
+    .dn-now-row[data-paused="1"] .dn-now-bar > i { background: var(--t4); }
+    .dn-now-pct { font-size: 11px; color: var(--t2); font-feature-settings: var(--tnum); flex: 0 0 auto; min-width: 30px; text-align: right; }
+    .dn-now-idle { display: flex; align-items: center; gap: 14px; padding: 13px 14px; }
+    .dn-now-disc { width: 34px; height: 34px; flex: 0 0 auto; border-radius: 50%; background: radial-gradient(circle at 50% 50%, var(--s2) 0 28%, var(--hair) 29% 31%, var(--s2) 32% 44%, var(--hair) 45% 47%, var(--s2) 48%); box-shadow: inset 0 0 0 1px var(--hair); }
+    .dn-now-idle-txt { min-width: 0; }
+    .dn-req-btn { margin-top: 6px; width: 100%; height: 26px; border: 1px solid color-mix(in srgb, var(--live) 45%, transparent); border-radius: var(--r-well); background: color-mix(in srgb, var(--live) 12%, transparent); color: var(--live); font: var(--f-lbl); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+    .dn-req-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--live) 20%, transparent); }
+    .dn-req-btn:disabled { cursor: default; opacity: .9; }
+    .dn-req-btn.done { border-color: color-mix(in srgb, var(--ok) 40%, transparent); background: transparent; color: var(--ok); }
+    @media (max-width: 640px) { .dn-now-row { grid-template-columns: 40px minmax(0, 1fr) 96px; } .dn-now-who { display: none; } }
 
     /* An element hidden via the `hidden` attribute must stay hidden: author
        `display` rules (like .onboard's below) otherwise beat the UA
@@ -4335,6 +4359,53 @@ function dnCover(coverUrl, mbid) {
     if (mbid) return '/api/dn/img?path=' + encodeURIComponent('/api/v1/covers/release-group/' + mbid + '?size=250');
     return '';
 }
+/* Now Playing — the DN headline, mirroring the media session floor. Sessions are the
+   live broadcast from DN's own web player (GET /api/v1/now-playing); when connected but
+   nothing is spinning we show an honest idle state rather than hiding the section. */
+const DN_SOURCE_LABEL = { navidrome: 'Navidrome', jellyfin: 'Jellyfin', plex: 'Plex', local: 'Local', 'local-files': 'Local', localfiles: 'Local', youtube: 'YouTube', soulseek: 'Soulseek', spotify: 'Spotify', subsonic: 'Subsonic' };
+function dnSourceLabel(s) { const k = String(s || '').toLowerCase(); return DN_SOURCE_LABEL[k] || (s ? String(s) : ''); }
+function dnNowFloor(np) {
+    if (!np.length) {
+        return `<div class="dn-now dn-now-idle"><div class="dn-now-disc"></div><div class="dn-now-idle-txt"><div class="cn-txt">Nothing spinning right now</div><div class="cn-sub">Play something in Dropped Needle's web player and it lands here live — track, artist, source and progress.</div></div></div>`;
+    }
+    const rows = np.map(x => {
+        const art = dnCover(x.cover, x.mbid);
+        const cover = art
+            ? `<img class="dn-now-art" src="${esc(art)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-now-art dn-now-fb\\'>♪</div>'">`
+            : `<div class="dn-now-art dn-now-fb">♪</div>`;
+        const prog = x.progress != null ? Math.max(0, Math.min(100, Math.round(x.progress))) : null;
+        const src = dnSourceLabel(x.source);
+        const who = [x.user, x.device].filter(Boolean).join(' · ') || 'listener';
+        return `<div class="dn-now-row" data-paused="${x.paused ? 1 : 0}">
+            ${cover}
+            <div class="dn-now-meta"><span class="dn-now-t">${esc(String(x.track || 'Unknown track'))}</span><span class="dn-now-a">${esc([x.artist, x.album].filter(Boolean).join(' — ')) || '—'}</span></div>
+            <div class="dn-now-who"><span class="dot ${x.paused ? 'idle' : 'live'}"></span>${esc(who)}${x.paused ? ' · paused' : ''}${src ? ` · <span class="dn-now-src">${esc(src)}</span>` : ''}</div>
+            ${prog != null ? `<div class="dn-now-prog"><span class="dn-now-bar"><i style="width:${prog}%"></i></span><span class="dn-now-pct mono">${prog}%</span></div>` : `<div class="dn-now-prog"><span class="dn-now-pct" style="color:var(--t4)">${x.paused ? 'paused' : 'live'}</span></div>`}
+        </div>`;
+    }).join('');
+    return `<div class="dn-now">${rows}</div>`;
+}
+/* Request music straight from the dashboard — the vaulted token proxies the ask to DN. */
+window.dnRequest = async function (btn, kind) {
+    const d = btn.dataset || {};
+    if (!d.mbid) { toast('No MusicBrainz ID available for this item'); return; }
+    const prev = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Requesting…';
+    let r;
+    try { r = await jpost('/api/dn/action', { action: kind === 'track' ? 'request-track' : 'request-album', mbid: d.mbid, artist: d.artist || '', album: d.album || '', track: d.track || '', year: d.year || '', rgMbid: d.rg || '', artistMbid: d.ambid || '' }); }
+    catch (e) { r = { ok: false, error: e.message }; }
+    if (r && r.ok) {
+        const st = String(r.status || '');
+        const already = /already/i.test(st);
+        const pending = /pending|approval|await/i.test(st);
+        btn.textContent = already ? 'In library ✓' : pending ? 'Requested · pending' : 'Requested ✓';
+        btn.classList.add('done');
+        toast(already ? `${d.album || d.track || 'That'} is already in your library` : `Requested ${d.album || d.track || 'music'} — Dropped Needle is on it ✓`);
+    } else {
+        btn.disabled = false; btn.textContent = prev;
+        toast('Request failed: ' + ((r && r.error) || 'unknown'));
+    }
+};
 /* In-dashboard search: results render right here in the lane — DN never has to open.
    Each result shows its library status; clicking through to DN stays available per row. */
 let _dnQuery = '', _dnResHtml = '';   // survive the 20s live repaints
@@ -4351,7 +4422,8 @@ window.dnSearch = async function (base, ev) {
     try { r = await jpost('/api/dn/query', { what: 'search', q }); } catch (e) { r = { ok: false, error: e.message }; }
     if (!r.ok) { _dnResHtml = `<div class="connect-note" style="margin-top:8px"><div class="cn-sub">Search failed: ${esc(r.error || 'unknown')}</div></div>`; host.innerHTML = _dnResHtml; return; }
     const badge = x => x.inLibrary ? '<span class="dn-badge in">in library</span>' : x.requested ? '<span class="dn-badge req">requested</span>' : '';
-    const alb = (r.albums || []).slice(0, 12).map(x => `<div class="dn-rel" title="${esc([x.title, x.artist, x.year].filter(Boolean).join(' · '))}" onclick="window.open('${esc(base)}/album/${esc(x.mbid)}','_blank','noopener')" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}" style="cursor:pointer">${x.cover ? `<img class="dn-rel-art" src="${esc(x.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">${esc((x.title || '♪')[0].toUpperCase())}</div>`}<div class="dn-rel-t">${esc(x.title || '')}${badge(x)}</div><div class="dn-rel-a">${esc([x.artist, x.year].filter(Boolean).join(' · '))}</div></div>`).join('');
+    const reqBtn = x => (x.inLibrary || x.requested || !x.mbid) ? '' : `<button class="dn-req-btn" data-mbid="${esc(x.mbid)}" data-artist="${esc(x.artist || '')}" data-album="${esc(x.title || '')}" data-year="${esc(String(x.year || ''))}" onclick="event.stopPropagation();dnRequest(this,'album')" onkeydown="event.stopPropagation()">+ Request</button>`;
+    const alb = (r.albums || []).slice(0, 12).map(x => `<div class="dn-rel" title="${esc([x.title, x.artist, x.year].filter(Boolean).join(' · '))}" onclick="window.open('${esc(base)}/album/${esc(x.mbid)}','_blank','noopener')" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}" style="cursor:pointer">${x.cover ? `<img class="dn-rel-art" src="${esc(x.cover)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">${esc((x.title || '♪')[0].toUpperCase())}</div>`}<div class="dn-rel-t">${esc(x.title || '')}${badge(x)}</div><div class="dn-rel-a">${esc([x.artist, x.year].filter(Boolean).join(' · '))}</div>${reqBtn(x)}</div>`).join('');
     const art = (r.artists || []).slice(0, 6).map(x => `<button class="dn-chip" onclick="window.open('${esc(base)}/artist/${esc(x.mbid)}','_blank','noopener')" title="open in Dropped Needle"><span class="dn-chip-k">${esc(x.title || '')}</span>${x.inLibrary ? '<span class="dn-chip-v" style="color:var(--ok)">✓</span>' : ''}</button>`).join('');
     _dnResHtml = (r.albums && r.albums.length) || (r.artists && r.artists.length)
         ? `${art ? `<div class="svc-group__label" style="margin-top:10px">Artists</div><div class="dn-chips">${art}</div>` : ''}${alb ? `<div class="svc-group__label" style="margin-top:8px">Albums</div><div class="dn-rels">${alb}</div>` : ''}`
@@ -4401,7 +4473,6 @@ function dnSection() {
     const drawerChip = (label, val, state, kind) => `<button class="dn-chip"${state ? ` data-state="${state}"` : ''} onclick="openDnDrawer('${kind}')"><span class="dn-chip-k">${esc(label)}</span><span class="dn-chip-v mono">${esc(String(val))}</span></button>`;
     const chips = [
         dn.pending != null ? drawerChip('Pending requests', dn.pending, dn.pending > 0 ? 'warn' : '', 'requests') : '',
-        chip('Listening now', np.length, np.some(x => !x.paused) ? 'live' : ''),
         dls.length ? drawerChip('Downloading', dls.length, 'live', 'downloads') : drawerChip('Downloads', 'view', '', 'downloads'),
         st.artists != null ? chip('Artists', st.artists, '', link('/library/artists')) : '',
         st.albums != null ? chip('Albums', st.albums, '', link('/library/albums')) : '',
@@ -4411,14 +4482,14 @@ function dnSection() {
     const relCard = (title, artist, sub2, art) => `<div class="dn-rel" title="${esc(title + (artist ? ' · ' + artist : ''))}">${art ? `<img class="dn-rel-art" src="${esc(art)}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'dn-rel-art dn-rel-fb\\'>♪</div>'">` : `<div class="dn-rel-art dn-rel-fb">${esc((title[0] || '♪').toUpperCase())}</div>`}<div class="dn-rel-t">${esc(title)}</div><div class="dn-rel-a">${esc([artist, sub2].filter(Boolean).join(' · '))}</div></div>`;
     const rel = (dn.releases || []).map(x => relCard(x.title || 'release', x.artist || '', [x.type, x.date].filter(Boolean).join(' · '), dnCover(null, x.mbid))).join('');
     const recent = !rel ? (dn.recentlyAdded || []).map(a => relCard(a.title || 'album', a.artist || '', a.year || '', dnCover(a.cover, a.mbid))).join('') : '';
-    const npRows = np.map(x => `<div class="dn-np"><span class="dot ${x.paused ? 'idle' : 'live'}"></span><span class="dn-np-t">${esc(String(x.track || 'playing'))}</span><span class="dn-np-a">${esc([x.artist, x.album].filter(Boolean).join(' — '))}</span>${x.progress != null ? `<span class="dn-np-prog mono">${x.progress}%</span>` : ''}<span class="dn-np-u">${esc([x.user, x.device, x.paused ? 'paused' : ''].filter(Boolean).join(' · '))}</span></div>`).join('');
     const dlRows = dls.map(d => `<div class="dn-np"><span class="dot ${d.error ? 'crit' : 'live'}"></span><span class="dn-np-t">${esc(String(d.album || 'download'))}</span><span class="dn-np-a">${esc([d.artist, d.status, d.files].filter(Boolean).join(' · '))}${d.error ? ` · <em style="color:var(--crit);font-style:normal">${esc(d.error)}</em>` : ''}</span>${d.progress != null ? `<span class="dn-np-prog mono">${d.progress}%</span>` : ''}</div>`).join('');
     return `<section class="lane dn-lane"><div class="lane-head"><span class="eyebrow">Dropped Needle · music discovery</span><span class="lane-meta">${dn.user ? esc(String(dn.user)) + (dn.role ? ' (' + esc(String(dn.role)) + ')' : '') + ' · ' : ''}${dn.ok ? '<span class="dot ok"></span>backend online' : '<span class="dot warn"></span>backend degraded'}</span></div><hr class="hair">
         <div class="dn-body">
-            <div class="dn-chips">${chips}</div>
+            <div class="lane-subhead"><span class="svc-group__label" style="padding-top:0">Now playing${np.length ? ` · ${np.length} listening` : ''}</span></div>
+            ${dnNowFloor(np)}
+            <div class="dn-chips" style="margin-top:12px">${chips}</div>
             <div class="dn-search"><input class="deck-search" id="dnQ" aria-label="Search artists and albums" placeholder="Search artists & albums…" value="${esc(_dnQuery)}" onkeydown="dnSearch('${esc(base)}', event)"><button class="da-btn" onclick="dnSearch('${esc(base)}')">Search</button></div>
             <div id="dnResults">${_dnResHtml}</div>
-            ${npRows ? `<div class="svc-group__label">Listening now</div>${npRows}` : ''}
             ${dlRows ? `<div class="svc-group__label">Acquiring · via slskd</div>${dlRows}` : ''}
             ${rel ? `<div class="svc-group__label">New releases · artists you follow</div><div class="dn-rels">${rel}</div>`
               : recent ? `<div class="svc-group__label">Recently added to the library</div><div class="dn-rels">${recent}</div>`

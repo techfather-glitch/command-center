@@ -2317,7 +2317,7 @@ function demoContainers() {
 // Synthetic catalog-widget + Docker data so DEMO mode showcases every concept —
 // AI (Ollama), Smart Home (Home Assistant), the *Arr pipeline, media, and the
 // live container log floor — with no real upstream. These ids read as "enabled".
-const DEMO_ENABLED = new Set(['ollama', 'homeassistant', 'sonarr', 'radarr', 'sabnzbd', 'qbittorrent', 'plex', 'jellyfin', 'tautulli', 'proxmox', 'adguard', 'prometheus', 'immich']);
+const DEMO_ENABLED = new Set(['ollama', 'homeassistant', 'sonarr', 'radarr', 'sabnzbd', 'qbittorrent', 'plex', 'jellyfin', 'tautulli', 'proxmox', 'adguard', 'prometheus', 'immich', 'droppedneedle']);
 function demoDockerContainers() {
     const rows = demoContainers().list.map((c, i) => ({
         id: 'demo' + ('0' + (i + 10)).slice(-2) + c.name.replace(/[^a-z0-9]/gi, '').slice(0, 12),
@@ -2356,7 +2356,39 @@ function demoWidget(type) {
         proxmox: { gauge: { label: 'CPU', value: Math.max(0, Math.round(dwave(11000, 12, 24))), max: 100, unit: '%', state: 'good' }, fields: [{ label: 'VMs/LXC', value: '11/12', kind: 'text', state: 'warn' }, { label: 'Nodes', value: '3/3', kind: 'text' }, { label: 'Memory', value: '61%', kind: 'text' }] },
         adguard: { gauge: { label: 'Blocked', value: 18, max: 100, unit: '%', state: 'good' }, fields: [{ label: 'Queries', value: 84213, kind: 'stat' }, { label: 'Blocked', value: 15380, kind: 'stat', state: 'warn' }, { label: 'Protection', value: 'On', kind: 'text', state: 'good' }] },
         prometheus: { gauge: { label: 'Targets up', value: 96, max: 100, unit: '%', state: 'warn' }, fields: [{ label: 'Targets', value: '24/25', kind: 'text', state: 'warn' }] },
-        immich: { fields: [{ label: 'Photos', value: 48210, kind: 'stat' }, { label: 'Videos', value: 3120, kind: 'stat' }, { label: 'Users', value: 4, kind: 'stat' }] }
+        immich: { fields: [{ label: 'Photos', value: 48210, kind: 'stat' }, { label: 'Videos', value: 3120, kind: 'stat' }, { label: 'Users', value: 4, kind: 'stat' }] },
+        droppedneedle: {
+            fields: [
+                { label: 'Backend', value: 'Online', kind: 'text', state: 'good' },
+                { label: 'Artists', value: 214, kind: 'stat' },
+                { label: 'Albums', value: 1893, kind: 'stat' },
+                { label: 'Pending requests', value: 2, kind: 'stat', state: 'warn' },
+                { label: 'Listening now', value: 2, kind: 'stat', state: 'good' },
+                { label: 'Downloading', value: 1, kind: 'stat', state: 'good' },
+                { label: 'slskd', value: 'Connected', kind: 'text', state: 'good' }
+            ],
+            items: [],
+            dn: {
+                ok: true, user: 'demo', role: 'admin', pending: 2,
+                nowPlaying: [
+                    { track: 'The Less I Know the Better', artist: 'Tame Impala', album: 'Currents', user: 'you', device: 'Web', paused: false, source: 'navidrome', cover: null, progress: Math.round(dwave(9000, 8, 48)) },
+                    { track: 'Self Care', artist: 'Mac Miller', album: 'Swimming', user: 'sam', device: 'Web', paused: true, source: 'jellyfin', cover: null, progress: 71 }
+                ],
+                downloads: [
+                    { album: 'In These Parts', artist: 'Tom MacDonald', status: 'downloading', progress: Math.round(dwave(6000, 8, 68)), files: '1/1', error: null }
+                ],
+                releases: [
+                    { title: 'Tomorrow’s Boxes', artist: 'Thom Yorke', date: '2026-07-02', type: 'Album', mbid: null },
+                    { title: 'New Single', artist: 'Followed Artist', date: '2026-07-06', type: 'Single', mbid: null }
+                ],
+                stats: { artists: 214, albums: 1893, tracks: 24107, size: 372e9, unmatched: 12 },
+                recentlyAdded: [
+                    { title: 'Swimming', artist: 'Mac Miller', mbid: null, cover: null, year: 2018 },
+                    { title: 'Currents', artist: 'Tame Impala', mbid: null, cover: null, year: 2015 }
+                ],
+                client: true, integrations: null, base: ''
+            }
+        }
     };
     const w = W[type];
     if (!w) return { ok: false, error: 'demo: no synthetic data for ' + type };
@@ -2379,6 +2411,24 @@ async function demoRoute(req, res) {
     if (u === '/api/integration/action' && req.method === 'POST') {
         const body = await readJsonBody(req).catch(() => ({}));
         send({ type: body && body.type, ok: true, status: 200, demo: true }); return true;
+    }
+    if (u === '/api/dn/action' && req.method === 'POST') {
+        await readJsonBody(req).catch(() => ({}));
+        send({ ok: true, status: 'queued', demo: true }); return true;
+    }
+    if (u === '/api/dn/query' && req.method === 'POST') {
+        const body = await readJsonBody(req).catch(() => ({}));
+        const what = body && body.what;
+        if (what === 'search') {
+            send({ ok: true, artists: [{ title: 'Tame Impala', mbid: null, inLibrary: true }, { title: 'Mac Miller', mbid: null, inLibrary: false }], albums: [
+                { title: 'Currents', artist: 'Tame Impala', year: 2015, mbid: '00000000-0000-4000-8000-000000000001', inLibrary: true, requested: false, cover: null },
+                { title: 'Swimming', artist: 'Mac Miller', year: 2018, mbid: '00000000-0000-4000-8000-000000000002', inLibrary: false, requested: false, cover: null },
+                { title: 'Circles', artist: 'Mac Miller', year: 2020, mbid: '00000000-0000-4000-8000-000000000003', inLibrary: false, requested: true, cover: null }
+            ] }); return true;
+        }
+        if (what === 'requests') { send({ ok: true, active: [{ album: 'Swimming', artist: 'Mac Miller', status: 'downloading', progress: 42, by: 'you' }], history: [{ album: 'Currents', artist: 'Tame Impala', status: 'completed', by: 'you' }], total: 1 }); return true; }
+        if (what === 'downloads') { send({ ok: true, items: [{ album: 'In These Parts', artist: 'Tom MacDonald', status: 'downloading', progress: 64, files: '1/1' }, { album: 'Currents', artist: 'Tame Impala', status: 'completed', progress: 100, files: '13/13' }] }); return true; }
+        send({ ok: true, items: [] }); return true;
     }
     if (u === '/api/live' && req.method === 'POST') {
         const body = await readJsonBody(req).catch(() => ({}));
@@ -3074,6 +3124,49 @@ const server = http.createServer(async (req, res) => {
             auditLog(req, 'droppedneedle.plexlogin', b.user && b.user.display_name, 'ok');
             jsonRes(res, 200, { ok: true, completed: true, user: (b.user && (b.user.display_name || b.user.username)) || 'Plex user' });
         } catch (e) { jsonRes(res, 500, { ok: false, error: e.message }); }
+    } else if (req.url === '/api/dn/action' && req.method === 'POST') {
+        // Control Dropped Needle from the dashboard — request music without opening the
+        // app. Server-side only: the vaulted session token never reaches the browser and
+        // every action is audited. (DN's player transport — play / pause / skip / seek —
+        // is a client-side heartbeat with no server API, so there is nothing to proxy.)
+        try {
+            const payload = await readJsonBody(req);
+            const action = String(payload && payload.action || '');
+            const headers = await dnAuthHeaders();               // Bearer <vaulted token>
+            const base = dnBaseUrl();
+            const mbid = String(payload && payload.mbid || '').trim();
+            const validMbid = /^[0-9a-fA-F-]{8,40}$/.test(mbid);
+            let r, label = '';
+            if (action === 'request-album') {
+                if (!validMbid) { jsonRes(res, 400, { ok: false, error: 'a release-group MusicBrainz ID is required' }); return; }
+                label = String(payload.album || mbid);
+                r = await igFetch(base + '/api/v1/requests/new', { method: 'POST', headers, body: {
+                    musicbrainz_id: mbid,
+                    artist: payload.artist || undefined,
+                    album: payload.album || undefined,
+                    year: (payload.year != null && payload.year !== '') ? (Number(payload.year) || undefined) : undefined,
+                    artist_mbid: payload.artistMbid || undefined,
+                    monitor_artist: false, auto_download_artist: false
+                } });
+            } else if (action === 'request-track') {
+                if (!validMbid) { jsonRes(res, 400, { ok: false, error: 'a recording MusicBrainz ID is required' }); return; }
+                label = String(payload.track || mbid);
+                r = await igFetch(base + '/api/v1/tracks/' + encodeURIComponent(mbid) + '/request', { method: 'POST', headers, body: {
+                    artist_name: payload.artist || undefined,
+                    track_title: payload.track || undefined,
+                    album_title: payload.album || undefined,
+                    release_group_mbid: payload.rgMbid || undefined,
+                    artist_mbid: payload.artistMbid || undefined
+                } });
+            } else { jsonRes(res, 400, { ok: false, error: 'unknown action' }); return; }
+            const ok = r.status >= 200 && r.status < 300;
+            auditLog(req, 'droppedneedle.' + action, label, ok ? 'ok' : 'failed');
+            if (r.status === 401) { jsonRes(res, 200, { ok: false, error: 'session expired — sign in with Plex again in Settings' }); return; }
+            const b = r.body || {};
+            const status = ok ? String(b.status || b.state || 'queued') : null;
+            const err = ok ? null : ((b.error && b.error.message) || (typeof b.detail === 'string' ? b.detail : null) || r.error || ('HTTP ' + r.status));
+            jsonRes(res, 200, { ok, status, error: err });
+        } catch (e) { jsonRes(res, 200, { ok: false, error: e.message }); }
     } else if (req.url === '/api/customwidget' && req.method === 'POST') {
         // Generic "custom API" escape-hatch tile: fetch a user-defined JSON URL and
         // extract dot-path fields. Config (incl. optional header) lives in settings.
