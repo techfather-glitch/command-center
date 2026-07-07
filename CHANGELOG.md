@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.18] — 2026-07-06
+
+### Added
+- **Service discovery — scan a host, add what answers with one click.** A scan
+  bar on Settings → Providers (host prefilled from services you already run) TCP-
+  probes one machine across every port the catalog knows and lists whatever
+  responds as clickable chips. Clicking a chip opens that provider pre-filled
+  with its address — integrations land in the catalog form, native providers in
+  their card — so all that's left is the credential. Shared ports list every
+  possibility (`:8096` → Emby *or* Jellyfin; `:8080` → SABnzbd *or* qBittorrent…)
+  so you choose. LAN-only by design: the target must resolve to a private/
+  loopback address (`POST /api/discover`).
+
 ## [2.0.17] — 2026-07-06
 
 ### Fixed
@@ -388,6 +401,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.18]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.18
 [2.0.17]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.17
 [2.0.16]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.16
 [2.0.15]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.15

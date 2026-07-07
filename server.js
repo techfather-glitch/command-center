@@ -2652,6 +2652,60 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: err.message || 'Failed to save settings' }));
         }
+    } else if (req.url === '/api/discover' && req.method === 'POST') {
+        // Active service discovery: TCP-probe ONE host across every port the
+        // catalog knows, so whatever answers becomes a one-click add with its
+        // URL prefilled. LAN-only by design — the target must resolve to a
+        // private/loopback address (this is a homelab finder, not a scanner).
+        try {
+            const body = await readJsonBody(req).catch(() => ({}));
+            const host = String((body && body.host) || '').trim();
+            if (!host || !/^[a-z0-9_.\-]+$/i.test(host)) { jsonRes(res, 400, { error: 'give a host or IP to scan' }); return; }
+            let ip = host;
+            if (!net.isIP(host)) {
+                try { ip = (await require('dns').promises.lookup(host)).address; }
+                catch (e) { jsonRes(res, 400, { error: `cannot resolve ${host}` }); return; }
+            }
+            const zone = ipZone(ip);
+            if (zone !== 'private' && zone !== 'loopback') { jsonRes(res, 400, { error: 'discovery is limited to private LAN addresses' }); return; }
+            // Candidate ports: every catalog integration with a port in its default
+            // URL, plus the native providers. Shared ports list every possibility —
+            // the user picks (e.g. 8096 could be Emby or Jellyfin).
+            const candidates = new Map();
+            const addCand = (port, scheme, c) => { const k = Number(port); if (!k) return; if (!candidates.has(k)) candidates.set(k, { scheme, list: [] }); candidates.get(k).list.push(c); };
+            for (const def of Object.values(INTEGRATIONS)) {
+                try {
+                    const u = new URL(def.defaultUrl);
+                    if (!u.port) continue;
+                    if (!isPrivateHostname(u.hostname) && u.hostname !== 'localhost') continue;   // hosted APIs aren't scannable
+                    addCand(u.port, u.protocol.replace(':', ''), { id: def.id, title: def.title, kind: 'integration' });
+                } catch (e) {}
+            }
+            addCand(30316, 'http',  { id: 'tracearr', title: 'Tracearr',      kind: 'native' });
+            addCand(9100,  'http',  { id: 'nodeexp',  title: 'Node Exporter', kind: 'native' });
+            addCand(8089,  'http',  { id: 'cadvisor', title: 'cAdvisor',      kind: 'native' });
+            addCand(2375,  'http',  { id: 'docker',   title: 'Docker API',    kind: 'native' });
+            addCand(443,   'https', { id: 'truenasscale', title: 'TrueNAS SCALE', kind: 'integration' });
+            const ports = [...candidates.keys()];
+            const openPorts = [];
+            const CHUNK = 16;
+            for (let i = 0; i < ports.length; i += CHUNK) {
+                const hits = await Promise.all(ports.slice(i, i + CHUNK).map(p => new Promise(ok => {
+                    const sock = net.connect({ host: ip, port: p, timeout: 900 });
+                    sock.on('connect', () => { sock.destroy(); ok(p); });
+                    sock.on('timeout', () => { sock.destroy(); ok(null); });
+                    sock.on('error', () => ok(null));
+                })));
+                hits.forEach(p => { if (p) openPorts.push(p); });
+            }
+            const found = [];
+            for (const p of openPorts.sort((a, b) => a - b)) {
+                const { scheme, list } = candidates.get(p);
+                for (const c of list) found.push(Object.assign({}, c, { port: p, url: `${scheme}://${host}${(scheme === 'https' && p === 443) ? '' : ':' + p}` }));
+            }
+            auditLog(req, 'discover.scan', host, `${found.length} found`);
+            jsonRes(res, 200, { host, scanned: ports.length, found });
+        } catch (err) { jsonRes(res, 500, { error: err.message }); }
     } else if (req.url === '/api/factory-reset' && req.method === 'POST') {
         // Wipe ALL persisted state (settings, encrypted vault + its key, audit
         // journal) and exit — the supervisor (docker restart: unless-stopped /

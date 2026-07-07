@@ -5826,11 +5826,51 @@ function providerCard(p) {
 }
 let _setCatalogOpen = false;
 window.toggleSetCatalog = function () { _setCatalogOpen = !_setCatalogOpen; render(); };
+/* — active discovery: scan one host across every known port, one-click add — */
+let _discState = { host: '', busy: false, found: null, scanned: 0, error: '' };
+function discSuggestHost() {
+    const counts = {};
+    (Store.services || []).forEach(s => { if (s.host) counts[s.host] = (counts[s.host] || 0) + 1; });
+    Object.values((Store.settings || {}).endpoints || {}).forEach(e => { try { const h = new URL(e.url).hostname; counts[h] = (counts[h] || 0) + 1; } catch (er) {} });
+    try { const dh = new URL((Store.settings || {}).dockerHost || '').hostname; if (dh) counts[dh] = (counts[dh] || 0) + 1; } catch (e) {}
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(x => x[0])[0] || '';
+}
+function discResults() {
+    const st = _discState;
+    if (st.error) return `<div class="ig-test-res bad" style="margin-top:8px">${esc(st.error)}</div>`;
+    if (!st.found) return '';
+    if (!st.found.length) return `<div class="set-desc" style="margin-top:8px">Nothing answered on <b>${esc(st.host)}</b> across ${st.scanned} known service ports.</div>`;
+    const enabled = new Set(enabledIntegrations().map(d => d.id));
+    return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${st.found.map(f => {
+        const on = f.kind === 'integration' && enabled.has(f.id);
+        return `<button class="ig-disc-chip" ${on ? 'disabled style="opacity:.55;cursor:default"' : ''} onclick="addDiscovered(${jstr(f.kind)}, ${jstr(f.id)}, ${jstr(f.url)})">${iconImg(f.title, 16)} ${esc(f.title)} <span class="lbl">:${f.port}${on ? ' · connected' : ''}</span></button>`;
+    }).join('')}</div>`;
+}
+window.runDiscover = async function () {
+    const host = gv('discHost').trim();
+    if (!host) { toast('Enter a host or IP to scan'); return; }
+    _discState = { host, busy: true, found: null, scanned: 0, error: '' }; render();
+    try {
+        const r = await jpost('/api/discover', { host });
+        _discState = r.error ? { host, busy: false, found: null, scanned: 0, error: r.error }
+                             : { host, busy: false, found: r.found || [], scanned: r.scanned || 0, error: '' };
+    } catch (e) { _discState = { host, busy: false, found: null, scanned: 0, error: e.message }; }
+    render();
+};
+window.addDiscovered = function (kind, id, url) {
+    if (kind === 'integration') { igDiscovered[id] = url; igGoSetup(id); toast('URL prefilled — add its key and Enable'); return; }
+    openProviderCfg(id);   // native card: open its drawer and prefill the address
+    setTimeout(() => { const el = document.getElementById('np_url_' + id) || document.getElementById('dockerHostInput'); if (el && !el.value) el.value = url; }, 150);
+};
 function settingsProviders() {
     const seen = new Set();
     const provs = Providers.all().filter(p => p.setupState !== 'available' && p.kind !== 'service' && !seen.has(p.id) && seen.add(p.id));
     provs.sort((a, b) => (!!b.errorState - !!a.errorState) || (a.setupState === 'connected' ? 0 : 1) - (b.setupState === 'connected' ? 0 : 1) || a.title.localeCompare(b.title));
-    return `<div class="pv-grid">${provs.map(providerCard).join('')}
+    const discBar = `<div class="ig-discover" style="margin-bottom:14px"><span class="ig-disc-ico">📡</span><div class="ig-disc-body" style="flex:1">
+        <b>Find services on a host</b><div class="set-desc">Scans one machine across every port the catalog knows — whatever answers becomes a one-click add with its address prefilled.</div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input class="set-input" id="discHost" placeholder="192.168.1.10" value="${esc(_discState.host || discSuggestHost())}" style="max-width:220px" onkeydown="if(event.key==='Enter')runDiscover()"><button class="tbtn primary" onclick="runDiscover()" ${_discState.busy ? 'disabled' : ''}>${_discState.busy ? 'Scanning…' : 'Scan'}</button></div>
+        ${discResults()}</div></div>`;
+    return `${discBar}<div class="pv-grid">${provs.map(providerCard).join('')}
         <button class="pv-card pv-add" onclick="toggleSetCatalog()"><span class="pv-add-plus">+</span><span class="pv-name">Add provider</span><span class="pv-meta">${(Store.integrations || []).length - enabledIntegrations().length} available in the catalog</span></button>
     </div>
     ${_setCatalogOpen ? `<div style="margin-top:14px">${igCatalogCard()}</div>` : ''}`;
