@@ -828,7 +828,7 @@ function liveFetch({ baseUrl, path, key, probe }) {
         else if (key && probe.authHeader && probe.authHeader !== 'apikey' && probe.authHeader !== 'Cookie') {
             headers[probe.authHeader] = key;
         }
-        const req = lib.get(url, { headers, timeout: 8000 }, (r) => {
+        const req = lib.get(url, { headers, timeout: 5000 }, (r) => {   // LAN services answer fast; don't let one unreachable probe stall the poll batch
             let data = '';
             r.on('data', c => { data += c; if (data.length > 8e6) req.destroy(new Error('response too large')); });   // bound a misbehaving upstream
             r.on('end', () => {
@@ -925,43 +925,20 @@ async function queryQbt(baseUrl, credentials = {}) {
 }
 
 async function queryTracearr(baseUrl, key, probe) {
-    let firstOk = null;
     let lastResp = null;
     const paths = [probe.path, ...(probe.fallbacks || [])];
     for (const path of paths) {
         const resp = await liveFetch({ baseUrl, path, key, probe });
         lastResp = resp;
-        if (resp.ok) {
-            const out = {
-                status: resp.status,
-                ok: true,
-                body: {
-                    ...resp.body,
-                    _tracearrPath: path
-                }
-            };
-            const sessions = Array.isArray(out.body) ? out.body
-                : Array.isArray(out.body?.data) ? out.body.data
-                : Array.isArray(out.body?.streams) ? out.body.streams
-                : Array.isArray(out.body?.sessions) ? out.body.sessions
-                : Array.isArray(out.body?.activeSessions) ? out.body.activeSessions
-                : Array.isArray(out.body?.active) ? out.body.active
-                : Array.isArray(out.body?.items) ? out.body.items
-                : Array.isArray(out.body?.records) ? out.body.records
-                : [];
-            if (sessions.length) return out;
-            if (!firstOk) firstOk = out;
-            continue;
-        }
-        if (resp.status === 401 || resp.status === 403) {
-            // Tracearr public tokens can access /api/v1/public/* but not the
-            // private session fallbacks. If the public endpoint already worked
-            // (even with zero active streams), do not report a false auth error.
-            if (firstOk) continue;
-            return resp;
-        }
+        // A 2xx IS the answer — zero active streams is a valid answer. Return
+        // immediately instead of firing the remaining fallback requests every
+        // poll (that turned an idle Tracearr into 3 sequential round-trips).
+        if (resp.ok) return { status: resp.status, ok: true, body: { ...resp.body, _tracearrPath: path } };
+        // A definitive auth failure on the PRIMARY public path is the real
+        // verdict; the private fallbacks would 401 for a public token anyway.
+        if ((resp.status === 401 || resp.status === 403) && path === probe.path) return resp;
+        // otherwise (404 / 5xx / timeout, or auth failure on a fallback) → try the next path
     }
-    if (firstOk) return firstOk;
     return lastResp || { status: 502, ok: false, body: { error: 'Tracearr unavailable' } };
 }
 
@@ -1708,7 +1685,7 @@ function igFetch(rawUrl, opt) {
         const _h = u.hostname.replace(/^\[|\]$/g, '');
         if (net.isIP(_h)) { const z = ipZone(_h); if (z === 'linklocal' || z === 'metadata' || z === 'unspecified' || z === 'invalid') return resolve({ status: 0, error: 'blocked target' }); }
         const lib = u.protocol === 'https:' ? require('https') : require('http');
-        const opts = { method: opt.method || 'GET', headers: Object.assign({ 'User-Agent': 'dashboard-server/1.0', 'Accept': opt.accept === 'prometheus' ? 'text/plain' : 'application/json' }, opt.headers || {}), timeout: opt.timeout || 12000 };
+        const opts = { method: opt.method || 'GET', headers: Object.assign({ 'User-Agent': 'dashboard-server/1.0', 'Accept': opt.accept === 'prometheus' ? 'text/plain' : 'application/json' }, opt.headers || {}), timeout: opt.timeout || 6000 };   // 6s: a LAN provider answers fast; a long hang just stalls the poll batch
         if (u.protocol === 'https:' && (opt.insecure || tlsRelaxedFor(u))) opts.rejectUnauthorized = false;
         let body = opt.body; if (body && typeof body !== 'string') { body = JSON.stringify(body); opts.headers['Content-Type'] = opts.headers['Content-Type'] || 'application/json'; }
         const req2 = lib.request(u, opts, (r) => {
@@ -2014,6 +1991,13 @@ function sseStop() { if (sse.timers) { sse.timers.forEach(clearInterval); sse.ti
    Set DASHBOARD_PASSWORD in the environment to require a login session on every /api route. */
 const AUDIT_PATH = path.join(DATA_DIR, 'dashboard-audit.log');
 const _statusCache = { body: null, at: 0, inflight: null };   // /api/status single-flight cache
+// Per-provider widget cache: the client polls every enabled integration every
+// few seconds (and on every nav), so without this each poll re-hit the upstream.
+// Success is cached briefly; a FAILURE is cached longer so one unreachable
+// provider stops timing out on every single poll cycle (the "everything laggy"
+// cause). Cleared whenever settings change; bypassed by an explicit Test.
+const _widgetCache = new Map();   // id -> { at, ok, out }
+const WIDGET_TTL_OK = 6000, WIDGET_TTL_FAIL = 20000;
 function auditLog(req, action, target, outcome) {
     // Sensitive-action journal: who did what, never the values. Append-only JSONL; must never break a request.
     try {
@@ -2640,6 +2624,7 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
             writeDashboardSettings(mergeSensitiveSettings(payload, readDashboardSettings()));
+            _widgetCache.clear(); _statusCache.at = 0;   // config changed — next poll is fresh
             auditLog(req, 'settings.save', Object.keys(payload).join(','), 'ok');
             // If UniFi settings changed, drop the cached login session so the next
             // status fetch re-authenticates with the new URL / username / password.
@@ -2970,8 +2955,15 @@ const server = http.createServer(async (req, res) => {
             const cfg = (settings.integrations && settings.integrations[def.id]) || {};
             const base = ((storedEndpoint(def.id) || cfg.url || def.defaultUrl) || '').replace(/\/+$/, '');
             if (!base) { jsonRes(res, 400, { ok: false, error: 'No URL configured' }); return; }
+            // Serve a fresh cached result (skip for an explicit Test).
+            const cached = _widgetCache.get(def.id);
+            if (!payload.test && cached && (Date.now() - cached.at) < (cached.ok ? WIDGET_TTL_OK : WIDGET_TTL_FAIL)) {
+                jsonRes(res, cached.ok ? 200 : 502, Object.assign({ type: def.id, cached: true }, cached.out, { updatedAt: cached.at }));
+                return;
+            }
             const cred = integrationCred(def.id);
             const out = await runIntegration(def, base, cred, cfg, payload.test);
+            if (!payload.test) _widgetCache.set(def.id, { at: Date.now(), ok: out.ok !== false, out });
             jsonRes(res, out.ok === false && payload.test ? 200 : (out.ok === false ? 502 : 200), Object.assign({ type: def.id }, out, { updatedAt: Date.now() }));
         } catch (e) { jsonRes(res, 500, { ok: false, error: e.message }); }
     } else if (req.url === '/api/integration/action' && req.method === 'POST') {

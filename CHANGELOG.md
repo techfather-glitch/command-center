@@ -4,6 +4,22 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.19] — 2026-07-06
+
+### Performance
+- **The dashboard no longer lags when one provider is slow or down.**
+  - **Tracearr** fired three sequential requests on every poll when idle (public
+    `streams` succeeds empty → two private fallbacks that 401 for a public
+    token). It now returns on the first 2xx — an idle Tracearr is a single fast
+    round-trip (measured ~14ms vs the old three-request chain).
+  - **Enabled-integration widgets are cached server-side** (success briefly, a
+    *failure* longer), so an unreachable provider is probed at most once per 20s
+    instead of timing out on every poll cycle and stalling the whole refresh.
+    The cache clears on any settings change and is bypassed by an explicit Test.
+  - **Upstream timeouts trimmed to LAN-appropriate values** (live probe 8s→5s,
+    provider fetch 12s→6s) so a single hung request can't gate a poll batch for
+    long.
+
 ## [2.0.18] — 2026-07-06
 
 ### Added
@@ -401,6 +417,7 @@ console.
   token proxy, CSRF protection, per-IP rate limiting, SSRF hardening, audit
   journal, opt-in authentication.
 
+[2.0.19]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.19
 [2.0.18]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.18
 [2.0.17]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.17
 [2.0.16]: https://github.com/techfather-glitch/command-center/releases/tag/v2.0.16
