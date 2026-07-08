@@ -4,6 +4,16 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] — 2026-07-08
+
+### Added
+- **The Automation pipeline's "Library" stage now shows what actually landed.** Sonarr
+  and Radarr integrations read their import history (`/api/v3/history` with
+  `includeSeries`/`includeMovie`), so the Library stage lights up with today's import
+  count and a new **"Recently added to library"** lane listing recent episodes and movies
+  — clean titles, quality and when — newest first. No Tautulli needed: it's sourced from
+  the *Arr pipeline that delivered them. Verified against live Sonarr/Radarr.
+
 ## [2.3.2] — 2026-07-08
 
 ### Fixed

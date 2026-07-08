@@ -4660,6 +4660,13 @@ function pipeGate(o) {
     if (o.connect) return `<div class="pipe-gate connect"><span class="pipe-gate-lbl">${esc(o.lbl)}</span><span class="pipe-fig"><a href="#/settings">Connect →</a></span><span class="pipe-sub">${esc(o.sub || '')}</span></div>`;
     return `<div class="pipe-gate ${o.flowing ? 'flowing' : ''}"${o.state ? ` data-state="${o.state}"` : ''}><span class="pipe-gate-lbl"><span class="dot ${o.dot || 'idle'}"></span>${esc(o.lbl)}</span><span class="pipe-fig">${o.fig}</span><span class="pipe-sub">${o.sub || ''}</span><span class="pipe-flow"></span></div>`;
 }
+/* Recently imported by the *Arr pipeline = what just landed in the library. Merged from
+   the Sonarr/Radarr integration widgets (their /api/v3/history imports), newest first. */
+function arrRecentImports() {
+    const on = id => enabledIntegrations().some(d => d.id === id);
+    const from = id => (on(id) && Store.widgets[id] && Array.isArray(Store.widgets[id].recentlyImported)) ? Store.widgets[id].recentlyImported : [];
+    return [...from('sonarr'), ...from('radarr')].filter(x => x && x.title).sort((a, b) => (new Date(b.at || 0)) - (new Date(a.at || 0)));
+}
 function pipeRail() {
     const svcs = Store.services || [];
     const idx = svcs.filter(s => /prowlarr|jackett/i.test(s.name));
@@ -4675,7 +4682,9 @@ function pipeRail() {
     const trOk = Store.tracearr && !Store.tracearr.error;
     const prowW = (wOn('prowlarr') && Store.widgets.prowlarr && Store.widgets.prowlarr.ok !== false) ? Store.widgets.prowlarr : null;
     const idxN = (prowW && Array.isArray(prowW.fields)) ? (Number((prowW.fields.find(x => /^indexers$/i.test(x.label)) || {}).value) || 0) : 0;
-    const tautOn = wOn('tautulli') && Store.widgets.tautulli && Store.widgets.tautulli.ok !== false;
+    const recent = arrRecentImports();
+    const imp24 = recent.filter(x => x.at && (Date.now() - new Date(x.at).getTime()) < 86400e3).length;
+    const arrAny = wOn('sonarr') || wOn('radarr');
     return `<section class="instrument pipe-wrap">
         <div class="lane-head"><span class="eyebrow">Acquisition pipeline</span><span class="lane-meta">the path a request takes to your library — each stage lights up as it's wired</span></div>
         <hr class="hair">
@@ -4688,7 +4697,11 @@ function pipeRail() {
         ${queued != null ? pipeGate({ lbl: 'Grabbed', fig: String(queued), sub: 'in *Arr queues', dot: queued ? 'live' : 'idle', state: queued ? 'live' : 'idle', flowing: queued > 0 }) : pipeGate({ lbl: 'Grabbed', connect: true, sub: arrs.length ? `${arrUp}/${arrs.length} *Arr up — connect for queue depth` : 'enable Sonarr / Radarr in Settings' })}
         ${dlOk ? pipeGate({ lbl: 'Downloading', fig: String(dlActive), sub: dlSpeed > 0 ? fmtBytes(dlSpeed) + '/s' : 'idle', dot: dlSpeed > 0 ? 'live' : 'idle', state: dlSpeed > 0 ? 'live' : 'idle', flowing: dlSpeed > 0 }) : pipeGate({ lbl: 'Downloading', connect: true, sub: 'connect qBittorrent / SABnzbd' })}
         ${trOk ? pipeGate({ lbl: 'Import & match', fig: '—', sub: 'telemetry not exposed by Tracearr yet', dot: 'idle', state: 'idle' }) : pipeGate({ lbl: 'Import & match', connect: true, sub: 'via Tracearr' })}
-        ${tautOn ? pipeGate({ lbl: 'Library', fig: '✓', sub: 'via Tautulli', dot: 'ok' }) : pipeGate({ lbl: 'Library', connect: true, sub: 'connect Tautulli for recently-added' })}
+        ${recent.length
+            ? pipeGate({ lbl: 'Library', fig: imp24 ? String(imp24) : String(recent.length), sub: imp24 ? 'imported today' : ('newest ' + fmtAgo(new Date(recent[0].at).getTime())), dot: 'live', state: 'live', flowing: imp24 > 0 })
+            : arrAny
+                ? pipeGate({ lbl: 'Library', fig: '—', sub: 'no recent imports', dot: 'idle' })
+                : pipeGate({ lbl: 'Library', connect: true, sub: 'connect Sonarr / Radarr for imports' })}
         </div>
     </section>`;
 }
@@ -4736,9 +4749,12 @@ PAGES.automation = function () {
     _opsGroups = null; _opsConcept = 'automation';
     const dls = dlRows();
     const trOk = Store.tracearr && !Store.tracearr.error;
+    const recent = arrRecentImports();
+    const recentRows = recent.slice(0, 12).map(x => `<div class="dl-item">${iconImg(x.kind === 'movie' ? 'Radarr' : 'Sonarr', 20)}<span class="dl-name"><b>${esc(x.title)}</b><i class="dl-route">${esc([x.sub, x.at ? fmtAgo(new Date(x.at).getTime()) : ''].filter(Boolean).join(' · '))}</i></span></div>`).join('');
     const work = `<div class="pipe-work">
         <section class="lane"><div class="lane-head"><span class="eyebrow">Downloading</span><span class="lane-meta">${dls.length} in flight · updated ${fmtAgo(Store.lastUpdate)}</span></div><hr class="hair"><div class="lane-body">${dls.length ? dls.join('') : `<div class="connect-note" style="padding:14px"><div class="cn-txt">Pipeline idle</div><div class="cn-sub">Nothing downloading right now — grabs land here with live speed and ETA.</div></div>`}</div></section>
         <section class="lane"><div class="lane-head"><span class="eyebrow">Import & match · via Tracearr</span><span class="lane-meta">first-class</span></div><hr class="hair"><div class="lane-body">${trOk ? `<div class="connect-note" style="padding:12px"><div class="cn-sub">Tracearr is connected — scan/import telemetry isn't exposed by its public streams endpoint yet. <a href="#/media">Streams are live on Media →</a></div></div>` : connectNote('Connect Tracearr', 'Scan, import and match activity appears here once Tracearr is reachable.')}</div></section>
+        <section class="lane"><div class="lane-head"><span class="eyebrow">Recently added to library</span><span class="lane-meta">${recent.length ? recent.length + ' shown · via Sonarr · Radarr' : 'via Sonarr · Radarr'}</span></div><hr class="hair"><div class="lane-body">${recentRows || connectNote('Nothing imported recently', 'When Sonarr or Radarr imports a grab it lands here — enable them in <a href="#/settings">Settings → Providers</a>.')}</div></section>
     </div>`;
     return `<div class="pipe-view">
         ${providerStrip('automation')}
