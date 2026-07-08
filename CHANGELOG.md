@@ -4,6 +4,23 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] — 2026-07-08
+
+### Added
+- **Run multiple instances of the same service — each with its own name.** Command Center
+  is no longer limited to one of each integration. Add as many as you run — e.g. three
+  Sonarrs (Main · Anime · Asian) or several Bazarrs — from a provider's card via
+  **+ Add another**, and give each a **Name** so they're distinct everywhere (nav, tiles,
+  provider cards). Each instance keeps its own URL and key. The Automation pipeline
+  (queue depth, indexers, recently-added) now sums across every instance of a type.
+- **Rename any provider.** Every provider card now has a **Name** field, so you can label
+  a single Sonarr "TV" or your Radarr "4K Movies" — leave it blank to keep the default.
+
+### Notes
+- An instance is stored as `type#N` (e.g. `sonarr#2`) and shares the base type's
+  definition while keeping its own address, credentials and name. Verified end-to-end
+  against a live second Sonarr instance.
+
 ## [2.4.0] — 2026-07-08
 
 ### Added

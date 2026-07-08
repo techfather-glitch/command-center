@@ -1810,6 +1810,11 @@ function integrationCred(id) {
     const vault = readSecretVault()['apiKeys.' + id] || {};
     return Object.assign({}, plain, vault);
 }
+// Multiple instances of one integration type share a catalog definition but keep their
+// own address / credentials / name. An instance id is the bare "type" (the first one) or
+// "type#N" for extras; the part before '#' selects the definition, the full id keys config.
+function baseType(id) { return String(id || '').split('#')[0]; }
+function integrationDef(id) { return INTEGRATIONS[baseType(id)]; }
 
 /* ── Dropped Needle server-side auth for the in-dashboard proxy routes ──
    Prefers the vaulted Plex-issued session token; falls back to a cached
@@ -2362,6 +2367,7 @@ function demoDockerLogs() {
     ].map(([s, lvl, msg]) => `[${T(s)}] ${lvl} ${msg}`).join('\n');
 }
 function demoWidget(type) {
+    type = String(type || '').split('#')[0];   // instance "sonarr#2" shares the base type's demo data
     const W = {
         ollama: { fields: [{ label: 'Models', value: 5, kind: 'stat' }, { label: 'Loaded', value: 2, kind: 'stat', state: 'good' }, { label: 'On disk', value: '28.4 GB', kind: 'text' }, { label: 'VRAM in use', value: '11.2 GB', kind: 'text', state: 'good' }], items: [{ label: 'llama3.1:8b', sub: '8.0B · Q4_K_M', value: 'loaded', state: 'good' }, { label: 'qwen2.5-coder:14b', sub: '14.8B · Q4_K_M', value: 'loaded', state: 'good' }, { label: 'mistral-small:24b', sub: '24B · Q4_K_M', value: '14.3 GB', state: 'idle' }, { label: 'nomic-embed-text:latest', sub: '137M · F16', value: '0.3 GB', state: 'idle' }, { label: 'llava:13b', sub: '13B · Q4_0', value: '8.0 GB', state: 'idle' }], version: '0.5.4' },
         homeassistant: { gauge: { label: 'Available', value: 99, max: 100, unit: '%', state: 'good' }, fields: [{ label: 'Lights on', value: '4/11', kind: 'text', state: 'good' }, { label: 'Switches on', value: 3, kind: 'stat', state: 'good' }, { label: 'Climate', value: 2, kind: 'stat' }, { label: 'Locks', value: '2/2', kind: 'text', state: 'good' }, { label: 'People home', value: 2, kind: 'stat', state: 'good' }, { label: 'Entities', value: 214, kind: 'stat' }], items: [{ label: 'Garage Door', sub: 'open', value: 'open', state: 'warn' }], version: '2026.6.1' },
@@ -3043,36 +3049,43 @@ const server = http.createServer(async (req, res) => {
     } else if (req.url.startsWith('/api/integrations')) {
         // Catalog metadata for the Settings integration browser — NO secrets.
         const settings = readDashboardSettings();
-        const cat = Object.values(INTEGRATIONS).map(d => ({
-            id: d.id, title: d.title, category: d.category, icon: d.icon || d.id, defaultUrl: d.defaultUrl || '', note: d.note || '',
+        const igCfg = settings.integrations || {};
+        // One entry per instance: the catalog default (id = type) plus any user-added
+        // "type#N" instances. `baseType` selects the definition; `title` carries the
+        // per-instance custom name so the provider shows up named accordingly.
+        const mk = (id, d) => ({
+            id, baseType: d.id, title: (igCfg[id] && igCfg[id].name) || d.title, category: d.category, icon: d.icon || d.id, defaultUrl: d.defaultUrl || '', note: d.note || '',
             authFields: igAuthFields(d.auth), configFields: d.configFields || [],
             // Expose write-actions (metadata only — never how they authenticate) so the
             // provider card can render control buttons.
             actions: (d.actions || []).map(a => ({ id: a.id, label: a.label, confirm: !!a.confirm, danger: !!a.danger, params: a.params || [] })),
-            enabled: (DEMO && DEMO_ENABLED.has(d.id)) || !!(settings.integrations && settings.integrations[d.id] && settings.integrations[d.id].enabled),
-            url: (DEMO && DEMO_ENABLED.has(d.id)) ? (d.defaultUrl || '') : (storedEndpoint(d.id) || '')
-        }));
+            enabled: (DEMO && DEMO_ENABLED.has(id)) || !!(igCfg[id] && igCfg[id].enabled),
+            url: (DEMO && DEMO_ENABLED.has(id)) ? (d.defaultUrl || '') : (storedEndpoint(id) || '')
+        });
+        const cat = Object.values(INTEGRATIONS).map(d => mk(d.id, d));
+        for (const id of Object.keys(igCfg)) { if (id.includes('#') && INTEGRATIONS[baseType(id)]) cat.push(mk(id, INTEGRATIONS[baseType(id)])); }
         jsonRes(res, 200, cat);
     } else if (req.url === '/api/widget' && req.method === 'POST') {
         try {
             const payload = await readJsonBody(req);
             req._logExtra = (payload && payload.type) || '?';   // name the provider in the request log
-            const def = INTEGRATIONS[payload && payload.type];
+            const instId = (payload && payload.type) || '';
+            const def = integrationDef(instId);   // "sonarr#2" -> the Sonarr definition
             if (!def) { jsonRes(res, 404, { ok: false, error: 'unknown integration' }); return; }
             const settings = readDashboardSettings();
-            const cfg = (settings.integrations && settings.integrations[def.id]) || {};
-            const base = ((storedEndpoint(def.id) || cfg.url || def.defaultUrl) || '').replace(/\/+$/, '');
+            const cfg = (settings.integrations && settings.integrations[instId]) || {};   // config keyed by instance
+            const base = ((storedEndpoint(instId) || cfg.url || def.defaultUrl) || '').replace(/\/+$/, '');
             if (!base) { jsonRes(res, 400, { ok: false, error: 'No URL configured' }); return; }
             // Serve a fresh cached result (skip for an explicit Test).
-            const cached = _widgetCache.get(def.id);
+            const cached = _widgetCache.get(instId);
             if (!payload.test && cached && (Date.now() - cached.at) < (cached.ok ? WIDGET_TTL_OK : WIDGET_TTL_FAIL)) {
-                jsonRes(res, cached.ok ? 200 : 502, Object.assign({ type: def.id, cached: true }, cached.out, { updatedAt: cached.at }));
+                jsonRes(res, cached.ok ? 200 : 502, Object.assign({ type: instId, cached: true }, cached.out, { updatedAt: cached.at }));
                 return;
             }
-            const cred = integrationCred(def.id);
+            const cred = integrationCred(instId);
             const out = await runIntegration(def, base, cred, cfg, payload.test);
-            if (!payload.test) _widgetCache.set(def.id, { at: Date.now(), ok: out.ok !== false, out });
-            jsonRes(res, out.ok === false && payload.test ? 200 : (out.ok === false ? 502 : 200), Object.assign({ type: def.id }, out, { updatedAt: Date.now() }));
+            if (!payload.test) _widgetCache.set(instId, { at: Date.now(), ok: out.ok !== false, out });
+            jsonRes(res, out.ok === false && payload.test ? 200 : (out.ok === false ? 502 : 200), Object.assign({ type: instId }, out, { updatedAt: Date.now() }));
         } catch (e) { jsonRes(res, 500, { ok: false, error: e.message }); }
     } else if (req.url === '/api/integration/action' && req.method === 'POST') {
         // Run a named write-action on an enabled provider. Same auth/CSRF/session
@@ -3080,16 +3093,17 @@ const server = http.createServer(async (req, res) => {
         // `actions` array (no arbitrary path is ever accepted from the client).
         try {
             const payload = await readJsonBody(req);
-            const def = INTEGRATIONS[payload && payload.type];
+            const instId = (payload && payload.type) || '';
+            const def = integrationDef(instId);
             if (!def) { jsonRes(res, 404, { ok: false, error: 'unknown integration' }); return; }
             const settings = readDashboardSettings();
-            const cfg = (settings.integrations && settings.integrations[def.id]) || {};
+            const cfg = (settings.integrations && settings.integrations[instId]) || {};
             if (!(cfg && cfg.enabled)) { jsonRes(res, 400, { ok: false, error: 'provider not enabled' }); return; }
-            const base = ((storedEndpoint(def.id) || cfg.url || def.defaultUrl) || '').replace(/\/+$/, '');
+            const base = ((storedEndpoint(instId) || cfg.url || def.defaultUrl) || '').replace(/\/+$/, '');
             if (!base) { jsonRes(res, 400, { ok: false, error: 'No URL configured' }); return; }
-            const out = await runIntegrationAction(def, base, integrationCred(def.id), cfg, String(payload.action || ''), payload.params || {});
-            auditLog(req, 'integration.action', def.id + ':' + (payload.action || ''), out.ok ? 'ok' : 'failed');
-            jsonRes(res, out.ok ? 200 : (out.status || 502), Object.assign({ type: def.id }, out));
+            const out = await runIntegrationAction(def, base, integrationCred(instId), cfg, String(payload.action || ''), payload.params || {});
+            auditLog(req, 'integration.action', instId + ':' + (payload.action || ''), out.ok ? 'ok' : 'failed');
+            jsonRes(res, out.ok ? 200 : (out.status || 502), Object.assign({ type: instId }, out));
         } catch (e) { jsonRes(res, 500, { ok: false, error: e.message }); }
     } else if (req.url.startsWith('/api/dn/img') && req.method === 'GET') {
         // Authenticated image proxy for Dropped Needle cover art — DN's covers need a

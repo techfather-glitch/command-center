@@ -2367,7 +2367,7 @@ const Providers = (() => {
         const enabledIds = new Set();
         (Store.integrations || []).forEach(def => {
             const w = Store.widgets[def.id];
-            const concept = ID_CONCEPT[def.id] || CAT_CONCEPT[def.category] || 'applications';
+            const concept = ID_CONCEPT[def.baseType || def.id] || CAT_CONCEPT[def.category] || 'applications';
             if (def.enabled) enabledIds.add(def.id);
             out.push(P({
                 id: def.id, title: def.title, icon: def.icon || def.id, kind: 'catalog', category: def.category, concepts: [concept], role: def.id === DN_ID ? 'discovery' : 'widget',
@@ -4083,7 +4083,7 @@ function svcIntegrationId(s) {
     for (const [re, id] of map) if (re.test(n)) return id;
     return null;
 }
-function integrationTitle(id) { return ({ qbittorrent: 'qBittorrent', sabnzbd: 'SABnzbd', tautulli: 'Tautulli', jellyfin: 'Jellyfin', sonarr: 'Sonarr', radarr: 'Radarr', lidarr: 'Lidarr', prowlarr: 'Prowlarr', bazarr: 'Bazarr', overseerr: 'Overseerr' })[id] || id; }
+function integrationTitle(id) { const d = (Store.integrations || []).find(x => x.id === id); if (d && d.title) return d.title; return ({ qbittorrent: 'qBittorrent', sabnzbd: 'SABnzbd', tautulli: 'Tautulli', jellyfin: 'Jellyfin', sonarr: 'Sonarr', radarr: 'Radarr', lidarr: 'Lidarr', prowlarr: 'Prowlarr', bazarr: 'Bazarr', overseerr: 'Overseerr' })[id] || id; }
 function opsIco(k) {
     const P = { play: '<path d="M7 5l11 7-11 7z"/>', pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>', transcode: '<path d="M4 7h11l-3-3M20 17H9l3 3"/>', stream: '<path d="M4 12h16M4 6h16M4 18h10"/>', bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>', download: '<path d="M12 3v12M7 11l5 5 5-5M5 21h14"/>', activity: '<path d="M3 12h4l3 8 4-16 3 8h4"/>', open: '<path d="M14 4h6v6M20 4l-8 8M10 6H5v13h13v-5"/>', restart: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/>', apps: ICONS.apps, bell: ICONS.bell, gear: '<circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.5L5 11a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.5L19 13a7 7 0 0 0 0-1z"/>' };
     const fill = (k === 'play' || k === 'pause' || k === 'bolt') ? 'currentColor' : 'none';
@@ -4663,9 +4663,9 @@ function pipeGate(o) {
 /* Recently imported by the *Arr pipeline = what just landed in the library. Merged from
    the Sonarr/Radarr integration widgets (their /api/v3/history imports), newest first. */
 function arrRecentImports() {
-    const on = id => enabledIntegrations().some(d => d.id === id);
-    const from = id => (on(id) && Store.widgets[id] && Array.isArray(Store.widgets[id].recentlyImported)) ? Store.widgets[id].recentlyImported : [];
-    return [...from('sonarr'), ...from('radarr')].filter(x => x && x.title).sort((a, b) => (new Date(b.at || 0)) - (new Date(a.at || 0)));
+    const out = [];
+    (Store.integrations || []).forEach(d => { const bt = d.baseType || d.id; if (d.enabled && (bt === 'sonarr' || bt === 'radarr')) { const w = Store.widgets[d.id]; if (w && Array.isArray(w.recentlyImported)) out.push(...w.recentlyImported); } });
+    return out.filter(x => x && x.title).sort((a, b) => (new Date(b.at || 0)) - (new Date(a.at || 0)));
 }
 function pipeRail() {
     const svcs = Store.services || [];
@@ -4673,23 +4673,25 @@ function pipeRail() {
     const idxUp = idx.filter(svcOnline).length;
     const arrs = svcs.filter(s => s.type === '*Arr' && !/tracearr|prowlarr|jackett/i.test(s.name));
     const arrUp = arrs.filter(svcOnline).length;
-    const wOn = id => enabledIntegrations().some(d => d.id === id);
-    const queued = ['sonarr', 'radarr', 'lidarr'].reduce((acc, id) => { const w = Store.widgets[id]; if (wOn(id) && w && w.ok !== false && Array.isArray(w.fields)) { const f = w.fields.find(x => /queue/i.test(x.label)); if (f) return (acc == null ? 0 : acc) + (Number(f.value) || 0); } return acc; }, null);
+    const enOf = types => (Store.integrations || []).filter(d => d.enabled && types.indexOf(d.baseType || d.id) >= 0);
+    const sumField = (defs, rx) => defs.reduce((acc, d) => { const w = Store.widgets[d.id]; if (w && w.ok !== false && Array.isArray(w.fields)) { const f = w.fields.find(x => rx.test(x.label)); if (f) return (acc == null ? 0 : acc) + (Number(f.value) || 0); } return acc; }, null);
+    const queued = sumField(enOf(['sonarr', 'radarr', 'lidarr']), /queue/i);   // summed across every *Arr instance
     const tor = qbtTorrents(), sab = sabQueue();
     const dlActive = tor.filter(t => /downloading|stalledDL|metaDL|forcedDL|queuedDL/i.test(t.state || '')).length + (sab ? Number(sab.noofslots || 0) : 0);
     const dlSpeed = tor.reduce((a, t) => a + (Number(t.dlspeed) || 0), 0) + (sab ? (Number(sab.kbpersec) || 0) * 1024 : 0);
     const dlOk = (Store.qbt && !Store.qbt.error) || !!sab;
     const trOk = Store.tracearr && !Store.tracearr.error;
-    const prowW = (wOn('prowlarr') && Store.widgets.prowlarr && Store.widgets.prowlarr.ok !== false) ? Store.widgets.prowlarr : null;
-    const idxN = (prowW && Array.isArray(prowW.fields)) ? (Number((prowW.fields.find(x => /^indexers$/i.test(x.label)) || {}).value) || 0) : 0;
+    const prowInst = enOf(['prowlarr']);
+    const prowOk = prowInst.length > 0;
+    const idxN = sumField(prowInst, /^indexers$/i) || 0;
     const recent = arrRecentImports();
     const imp24 = recent.filter(x => x.at && (Date.now() - new Date(x.at).getTime()) < 86400e3).length;
-    const arrAny = wOn('sonarr') || wOn('radarr');
+    const arrAny = enOf(['sonarr', 'radarr']).length > 0;
     return `<section class="instrument pipe-wrap">
         <div class="lane-head"><span class="eyebrow">Acquisition pipeline</span><span class="lane-meta">the path a request takes to your library — each stage lights up as it's wired</span></div>
         <hr class="hair">
         <div class="pipe-rail">
-        ${prowW
+        ${prowOk
             ? pipeGate({ lbl: 'Search', fig: idxN ? String(idxN) : '—', sub: idxN ? `${idxN} indexers · Prowlarr` : 'Prowlarr connected', dot: idxN ? 'ok' : 'warn' })
             : idx.length
                 ? pipeGate({ lbl: 'Search', fig: `${idxUp}/${idx.length}`, sub: idx.map(s => s.name).join(' · '), dot: idxUp === idx.length ? 'ok' : 'warn', state: idxUp < idx.length ? 'warn' : '' })
@@ -4733,12 +4735,12 @@ function pipeSpine() {
     qbtTorrents().forEach(t => { if (/stalledDL/i.test(t.state || '')) attn.push(`<div class="insight-row"><span class="dot warn"></span><span>Stalled · ${esc((t.name || '').slice(0, 34))}</span></div>`); if (/error|missingFiles/i.test(t.state || '')) attn.push(`<div class="insight-row"><span class="dot crit"></span><span>Error · ${esc((t.name || '').slice(0, 34))}</span></div>`); });
     svcs.filter(s => (s.type === '*Arr' || s.type === 'Downloader') && !svcOnline(s)).forEach(s => attn.push(`<div class="insight-row"><span class="dot crit"></span><span>${esc(s.name)} is down</span></div>`));
     const attnHtml = attn.length ? attn.slice(0, 8).join('') : `<div class="insight-row"><span class="dot ok"></span><span>All clear this session</span></div>`;
-    const wOn = id => enabledIntegrations().some(d => d.id === id);
-    const appRows = ['sonarr', 'radarr', 'lidarr'].map(id => {
-        const w = Store.widgets[id];
-        if (wOn(id) && w && w.ok !== false && Array.isArray(w.fields)) { const q = Number((w.fields.find(x => /queue/i.test(x.label)) || {}).value) || 0; const m = Number((w.fields.find(x => /missing|wanted/i.test(x.label)) || {}).value) || 0; const tot = Math.max(1, q + m); return `<div class="pipebar-row"><span class="pb-lbl">${integrationTitle(id)}</span><span class="pb-track"><i style="width:${Math.round(q / tot * 100)}%"></i></span><span class="pb-v">${q} q · ${m} wanted</span></div>`; }
-        return `<div class="pipebar-row"><span class="pb-lbl">${integrationTitle(id)}</span><span class="pb-track"></span><span class="pb-v" style="color:var(--t4)">connect</span></div>`;
-    }).join('');
+    const arrInst = (Store.integrations || []).filter(d => d.enabled && ['sonarr', 'radarr', 'lidarr'].indexOf(d.baseType || d.id) >= 0);
+    const appRows = arrInst.length ? arrInst.map(d => {
+        const w = Store.widgets[d.id];
+        if (w && w.ok !== false && Array.isArray(w.fields)) { const q = Number((w.fields.find(x => /queue/i.test(x.label)) || {}).value) || 0; const m = Number((w.fields.find(x => /missing|wanted/i.test(x.label)) || {}).value) || 0; const tot = Math.max(1, q + m); return `<div class="pipebar-row"><span class="pb-lbl">${esc(d.title)}</span><span class="pb-track"><i style="width:${Math.round(q / tot * 100)}%"></i></span><span class="pb-v">${q} q · ${m} wanted</span></div>`; }
+        return `<div class="pipebar-row"><span class="pb-lbl">${esc(d.title)}</span><span class="pb-track"></span><span class="pb-v" style="color:var(--t4)">…</span></div>`;
+    }).join('') : `<div class="pipebar-row"><span class="pb-lbl" style="color:var(--t4)">Sonarr / Radarr</span><span class="pb-track"></span><span class="pb-v" style="color:var(--t4)">connect</span></div>`;
     return `<aside class="pipe-spine ops-insights" style="position:static">
         <section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Providers by stage</span></div><hr class="hair"><div class="lane-body">${provRows}</div></section>
         <section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Needs attention</span></div><hr class="hair"><div class="lane-body">${attnHtml}</div></section>
@@ -5740,16 +5742,21 @@ function igCfgVal(id, name) { const ig = (Store.settings && Store.settings.integ
    provider Configure drawer (element ids are global, so saves work from both). */
 function igConfigForm(d) {
     const af = d.authFields || [], cf = d.configFields || [];
-    return `${field('URL', 'igu_' + d.id, d.url || igDiscovered[d.id] || d.defaultUrl || '', d.defaultUrl || 'http://host:port')}
+    const bt = d.baseType || d.id, isInstance = String(d.id).includes('#');
+    return `${field('Name', 'ign_' + d.id, d.title || '', d.title || '')}
+        ${field('URL', 'igu_' + d.id, d.url || igDiscovered[d.id] || d.defaultUrl || '', d.defaultUrl || 'http://host:port')}
         ${af.map(f => f.kind === 'secret' ? credField(f.label, 'igf_' + d.id + '_' + f.name, igFieldSet(d.id, f.name), f.label) : field(f.label, 'igf_' + d.id + '_' + f.name, igTextVal(d.id, f.name), f.label)).join('')}
         ${cf.map(f => field(f.label, 'igf_' + d.id + '_' + f.name, igCfgVal(d.id, f.name), f.label)).join('')}
         <div class="ig-cat-act">
             <button class="tbtn" onclick="igTest('${d.id}')">Test</button>
             <button class="tbtn primary" onclick="igSaveEnable('${d.id}')">${d.enabled ? 'Save' : 'Enable'}</button>
-            ${d.enabled ? `<button class="tbtn danger" onclick="igDisable('${d.id}')">Disable</button>` : ''}
+            ${(d.enabled || isInstance) ? `<button class="tbtn" onclick="igAddInstance('${bt}')" title="Run another instance of this service on its own URL and key">+ Add another</button>` : ''}
+            ${d.enabled && !isInstance ? `<button class="tbtn danger" onclick="igDisable('${d.id}')">Disable</button>` : ''}
+            ${isInstance ? `<button class="tbtn danger" onclick="igRemove('${d.id}')">Remove</button>` : ''}
             ${d.id === 'droppedneedle' ? `<button class="tbtn" onclick="dnPlexSignin()" title="Use Dropped Needle's own Plex sign-in — no local password needed" style="border-color:color-mix(in srgb,#e5a00d 45%,transparent)">Sign in with Plex</button>` : ''}
             <span class="ig-test-res" id="igtest_${d.id}"></span>
         </div>
+        ${(d.enabled || isInstance) ? `<div class="set-desc" style="margin-top:6px;font-size:11px">Name this one to tell copies apart (e.g. "Sonarr · Anime"). <b>Add another</b> runs a second instance of the same app on its own URL &amp; key.</div>` : ''}
         ${d.id === 'droppedneedle' ? `<div class="set-desc" style="margin-top:6px;font-size:11.5px;color:var(--muted)">If your Dropped Needle account was created with the Plex button, it has no local password — use <b>Sign in with Plex</b>, approve in the tab that opens, then <b>Enable</b>.</div>` : ''}`;
 }
 function igCatalogRow(d, extra) {
@@ -5791,11 +5798,32 @@ async function igSave(id, enable) {
     const apiKeys = Object.assign({}, s.apiKeys);
     const integrations = Object.assign({}, s.integrations);
     const cfg = Object.assign({}, integrations[id]);
+    const nm = (gv('ign_' + id) || '').trim(); if (nm) cfg.name = nm; else delete cfg.name;   // custom display name (blank reverts to the default)
     (d.authFields || []).forEach(f => { const v = gv('igf_' + id + '_' + f.name); if (f.kind === 'secret') { if (v) apiKeys[id] = Object.assign({}, apiKeys[id], { [f.name]: v }); } else { apiKeys[id] = Object.assign({}, apiKeys[id], { [f.name]: v }); } });
     (d.configFields || []).forEach(f => { cfg[f.name] = gv('igf_' + id + '_' + f.name); });
     if (enable != null) cfg.enabled = enable; integrations[id] = cfg;
     return await saveSettings({ endpoints, apiKeys, integrations }, 'Saving…');
 }
+/* Multi-instance: run several copies of one app (e.g. three Sonarrs), each named + on its
+   own URL/key. A new instance id is "type#N"; removing one prunes its settings. */
+window.igAddInstance = async function (type) {
+    const ids = new Set((Store.integrations || []).map(d => d.id));
+    let n = 2; while (ids.has(type + '#' + n)) n++;
+    const newId = type + '#' + n;
+    const base = (Store.integrations || []).find(x => x.id === type);
+    const baseName = base ? String(base.title).replace(/\s+\d+$/, '') : type;
+    const s = Store.settings || {};
+    const integrations = Object.assign({}, s.integrations); integrations[newId] = Object.assign({}, integrations[newId], { enabled: false, name: baseName + ' ' + n });
+    if (await saveSettings({ integrations }, 'Adding instance…')) { await refreshIntegrations(); igExpanded = newId; _setDest = 'providers'; _setCatalogOpen = true; render(); toast('New instance added — set its Name, URL & key, then Enable'); }
+};
+window.igRemove = async function (id) {
+    if (!String(id).includes('#')) return;
+    const s = Store.settings || {};
+    const endpoints = Object.assign({}, s.endpoints); delete endpoints[id];
+    const apiKeys = Object.assign({}, s.apiKeys); delete apiKeys[id];
+    const integrations = Object.assign({}, s.integrations); delete integrations[id];
+    if (await saveSettings({ endpoints, apiKeys, integrations }, 'Removing instance…')) { await refreshIntegrations(); if (igExpanded === id) igExpanded = ''; if (Store.widgets) delete Store.widgets[id]; render(); toast('Instance removed'); }
+};
 window.igSaveEnable = async function (id) { if (await igSave(id, true)) { await refreshIntegrations(); await refreshWidget(id); render(); const ob = document.getElementById('onboard'); if (ob && !ob.hidden) renderOnboard(); const d = (Store.integrations || []).find(x => x.id === id); toast((d ? d.title : 'Integration') + ' enabled ✓'); } };
 window.igDisable = async function (id) { const s = Store.settings || {}; const integrations = Object.assign({}, s.integrations); integrations[id] = Object.assign({}, integrations[id], { enabled: false }); if (await saveSettings({ integrations }, 'Disabling…')) { await refreshIntegrations(); render(); toast('Disabled'); } };
 /* Run one declared provider write-action (RSS sync, pause queue, resume torrents…)
