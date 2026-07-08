@@ -4673,15 +4673,22 @@ function pipeRail() {
     const dlSpeed = tor.reduce((a, t) => a + (Number(t.dlspeed) || 0), 0) + (sab ? (Number(sab.kbpersec) || 0) * 1024 : 0);
     const dlOk = (Store.qbt && !Store.qbt.error) || !!sab;
     const trOk = Store.tracearr && !Store.tracearr.error;
+    const prowW = (wOn('prowlarr') && Store.widgets.prowlarr && Store.widgets.prowlarr.ok !== false) ? Store.widgets.prowlarr : null;
+    const idxN = (prowW && Array.isArray(prowW.fields)) ? (Number((prowW.fields.find(x => /^indexers$/i.test(x.label)) || {}).value) || 0) : 0;
+    const tautOn = wOn('tautulli') && Store.widgets.tautulli && Store.widgets.tautulli.ok !== false;
     return `<section class="instrument pipe-wrap">
         <div class="lane-head"><span class="eyebrow">Acquisition pipeline</span><span class="lane-meta">the path a request takes to your library — each stage lights up as it's wired</span></div>
         <hr class="hair">
         <div class="pipe-rail">
-        ${pipeGate({ lbl: 'Search', fig: idx.length ? `${idxUp}/${idx.length}` : '—', sub: idx.length ? idx.map(s => s.name).join(' · ') : 'no indexer manager', dot: idx.length ? (idxUp === idx.length ? 'ok' : 'warn') : 'idle', state: idx.length && idxUp < idx.length ? 'warn' : '' })}
-        ${queued != null ? pipeGate({ lbl: 'Grabbed', fig: String(queued), sub: 'in *Arr queues', dot: queued ? 'live' : 'idle', state: queued ? 'live' : 'idle', flowing: queued > 0 }) : pipeGate({ lbl: 'Grabbed', connect: true, sub: `${arrUp}/${arrs.length} *Arr up — connect for queue depth` })}
+        ${prowW
+            ? pipeGate({ lbl: 'Search', fig: idxN ? String(idxN) : '—', sub: idxN ? `${idxN} indexers · Prowlarr` : 'Prowlarr connected', dot: idxN ? 'ok' : 'warn' })
+            : idx.length
+                ? pipeGate({ lbl: 'Search', fig: `${idxUp}/${idx.length}`, sub: idx.map(s => s.name).join(' · '), dot: idxUp === idx.length ? 'ok' : 'warn', state: idxUp < idx.length ? 'warn' : '' })
+                : pipeGate({ lbl: 'Search', connect: true, sub: 'enable Prowlarr in Settings → Providers' })}
+        ${queued != null ? pipeGate({ lbl: 'Grabbed', fig: String(queued), sub: 'in *Arr queues', dot: queued ? 'live' : 'idle', state: queued ? 'live' : 'idle', flowing: queued > 0 }) : pipeGate({ lbl: 'Grabbed', connect: true, sub: arrs.length ? `${arrUp}/${arrs.length} *Arr up — connect for queue depth` : 'enable Sonarr / Radarr in Settings' })}
         ${dlOk ? pipeGate({ lbl: 'Downloading', fig: String(dlActive), sub: dlSpeed > 0 ? fmtBytes(dlSpeed) + '/s' : 'idle', dot: dlSpeed > 0 ? 'live' : 'idle', state: dlSpeed > 0 ? 'live' : 'idle', flowing: dlSpeed > 0 }) : pipeGate({ lbl: 'Downloading', connect: true, sub: 'connect qBittorrent / SABnzbd' })}
         ${trOk ? pipeGate({ lbl: 'Import & match', fig: '—', sub: 'telemetry not exposed by Tracearr yet', dot: 'idle', state: 'idle' }) : pipeGate({ lbl: 'Import & match', connect: true, sub: 'via Tracearr' })}
-        ${pipeGate({ lbl: 'Library', connect: true, sub: 'recently-added needs Tautulli' })}
+        ${tautOn ? pipeGate({ lbl: 'Library', fig: '✓', sub: 'via Tautulli', dot: 'ok' }) : pipeGate({ lbl: 'Library', connect: true, sub: 'connect Tautulli for recently-added' })}
         </div>
     </section>`;
 }

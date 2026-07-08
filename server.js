@@ -806,6 +806,15 @@ function serviceProbeBase(svcName) {
         if (svc.url && /^https?:\/\//i.test(svc.url)) return String(svc.url).replace(/\/+$/, '');
         if (svc.host && Number(svc.port)) return `${Number(svc.port) === 443 ? 'https' : 'http'}://${svc.host}:${svc.port}`;
     }
+    // Fall back to the aliased catalog integration's configured address. Credentials
+    // already alias via CRED_ALIASES, so a normally-configured qBittorrent / SABnzbd /
+    // Sonarr… integration authenticates — but without this its native pipeline probe had
+    // no address and silently read "not configured", leaving the Automation page dark.
+    const alias = CRED_ALIASES[svcName];
+    if (alias) {
+        const aliasEp = storedEndpoint(alias[0]);
+        if (aliasEp) return String(aliasEp).replace(/\/+$/, '');
+    }
     const def = (LIVE_PROBES[svcName] || {}).defaultUrl || '';
     if (def && !isLoopbackUrl(def)) return String(def).replace(/\/+$/, '');
     return '';

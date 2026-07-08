@@ -4,6 +4,24 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] — 2026-07-08
+
+### Fixed
+- **The Automation "Downloading" stage stayed dark even with qBittorrent/SABnzbd
+  connected.** The native pipeline probes resolved their *address* only from a legacy
+  native-service entry — not from the catalog integration — so a download client added
+  the normal way (as an integration) had working credentials but no address, and the
+  stage read "Connect." Address resolution now falls back to the aliased integration's
+  endpoint, mirroring how credentials already alias (`CRED_ALIASES`). The Downloading
+  stage lights up with no reconfiguration. Verified end-to-end against a live qBittorrent
+  (v5.1.2) and SABnzbd configured as integrations only.
+
+### Changed
+- The Automation stages now recognize integration-configured providers and guide you
+  precisely: **Search** reads the Prowlarr integration's indexer count; **Grabbed** and
+  **Library** prompt you to enable Sonarr/Radarr and Tautulli when they're missing rather
+  than showing a bare "0/0".
+
 ## [2.3.1] — 2026-07-08
 
 ### Fixed
