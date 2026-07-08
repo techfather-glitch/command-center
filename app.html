@@ -4562,19 +4562,21 @@ window.openDnDrawer = async function (kind) {
         body.innerHTML = `${summary}${bulk}${rows || '<div class="lbl" style="padding:6px 2px">Nothing in progress or stuck — the queue is clear.</div>'}`;
     }
 };
-/* Download controls — cancel / retry a single grab, or bulk-manage the queue. Each
-   proxies through the audited /api/dn/action; the drawer refreshes to show the result. */
+/* Download controls — cancel / retry a single grab, or bulk-manage the queue. Each proxies
+   through the audited /api/dn/action, then refreshes the DN data and whatever view is
+   showing (the drawer if open, else the current page — e.g. the Automation lane). */
+function dnRefreshViews() { const d = document.getElementById('drawer'); if (d && d.getAttribute('data-open') === 'true') openDnDrawer('downloads'); else if (typeof render === 'function') render(); }
 window.dnDlAction = async function (taskId, kind, btn) {
     if (btn) { btn.disabled = true; btn.textContent = kind === 'retry' ? 'Retrying…' : 'Cancelling…'; }
     let r; try { r = await jpost('/api/dn/action', { action: kind === 'retry' ? 'download-retry' : 'download-cancel', taskId }); } catch (e) { r = { ok: false, error: e.message }; }
-    if (r && r.ok) { toast(kind === 'retry' ? 'Retrying ✓' : 'Cancelled ✓'); openDnDrawer('downloads'); }
+    if (r && r.ok) { toast(kind === 'retry' ? 'Retrying ✓' : 'Cancelled ✓'); await refreshWidget('droppedneedle'); dnRefreshViews(); }
     else { if (btn) { btn.disabled = false; btn.textContent = kind === 'retry' ? 'Retry' : 'Cancel'; } toast('Failed: ' + ((r && r.error) || 'unknown')); }
 };
 window.dnDlBulk = async function (action, btn) {
     const prev = btn ? btn.textContent : '';
     if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
     let r; try { r = await jpost('/api/dn/action', { action }); } catch (e) { r = { ok: false, error: e.message }; }
-    if (r && r.ok) { toast((r.count != null ? r.count + ' ' : '') + 'done ✓'); openDnDrawer('downloads'); }
+    if (r && r.ok) { toast((r.count != null ? r.count + ' ' : '') + 'done ✓'); await refreshWidget('droppedneedle'); dnRefreshViews(); }
     else { if (btn) { btn.disabled = false; btn.textContent = prev; } toast('Failed: ' + ((r && r.error) || 'unknown')); }
 };
 /* Playlists drawer — your playlists plus others' public ones. The "whose" chips filter
@@ -4779,14 +4781,26 @@ function pipeSpine() {
         <section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Queue by app</span></div><hr class="hair"><div class="lane-body">${appRows}</div></section>
     </aside>`;
 }
+function dnDlRows() {
+    const dn = (Store.widgets && Store.widgets.droppedneedle && Store.widgets.droppedneedle.dn) || {};
+    const dls = Array.isArray(dn.downloads) ? dn.downloads : [];
+    return dls.map(d => {
+        const failed = /^(failed|partial|error)$/i.test(String(d.status || ''));
+        const pct = d.progress != null ? Math.round(d.progress) : null;
+        const ctrl = d.id ? (failed ? `<button class="dn-dl-btn" onclick="dnDlAction('${esc(d.id)}','retry',this)">Retry</button>` : `<button class="dn-dl-btn danger" onclick="dnDlAction('${esc(d.id)}','cancel',this)">Cancel</button>`) : '';
+        return `<div class="dl-item">${iconImg('Dropped Needle', 20)}<span class="dl-name"><b>${esc(d.album || d.track || 'grab')}</b><i class="dl-route">${esc(['music', d.artist, d.status, d.files].filter(Boolean).join(' · '))}${d.error ? ' · ' + esc(d.error) : ''}</i></span><span class="dl-prog"><i class="${failed ? 'stall' : ''}" style="width:${pct || 0}%"></i></span><span class="dl-v">${failed ? 'stuck' : (pct != null ? pct + '%' : '')}</span>${ctrl}</div>`;
+    });
+}
 PAGES.automation = function () {
     _opsGroups = null; _opsConcept = 'automation';
     const dls = dlRows();
+    const dnDl = dnDlRows();
+    const dnc = (Store.widgets.droppedneedle && Store.widgets.droppedneedle.dn && Store.widgets.droppedneedle.dn.dlCounts) || {};
     const trOk = Store.tracearr && !Store.tracearr.error;
     const recent = arrRecentImports();
     const recentRows = recent.slice(0, 12).map(x => `<div class="dl-item">${iconImg(x.kind === 'movie' ? 'Radarr' : 'Sonarr', 20)}<span class="dl-name"><b>${esc(x.title)}</b><i class="dl-route">${esc([x.sub, x.at ? fmtAgo(new Date(x.at).getTime()) : ''].filter(Boolean).join(' · '))}</i></span></div>`).join('');
     const work = `<div class="pipe-work">
-        <section class="lane"><div class="lane-head"><span class="eyebrow">Downloading</span><span class="lane-meta">${dls.length} in flight · updated ${fmtAgo(Store.lastUpdate)}</span></div><hr class="hair"><div class="lane-body">${dls.length ? dls.join('') : `<div class="connect-note" style="padding:14px"><div class="cn-txt">Pipeline idle</div><div class="cn-sub">Nothing downloading right now — grabs land here with live speed and ETA.</div></div>`}</div></section>
+        <section class="lane"><div class="lane-head"><span class="eyebrow">Downloading</span><span class="lane-meta">${dls.length + dnDl.length} item${(dls.length + dnDl.length) === 1 ? '' : 's'} · updated ${fmtAgo(Store.lastUpdate)}</span></div><hr class="hair"><div class="lane-body">${(dls.length || dnDl.length) ? `${dls.join('')}${dnDl.length ? `<div class="svc-group__label">Dropped Needle · music${dnc.problems ? ` · ${dnc.problems} stuck` : ''} · <a href="#" onclick="openDnDrawer('downloads');return false" style="color:var(--t3)">manage →</a></div>${dnDl.join('')}` : ''}` : `<div class="connect-note" style="padding:14px"><div class="cn-txt">Pipeline idle</div><div class="cn-sub">Nothing downloading right now — grabs land here with live speed and ETA.</div></div>`}</div></section>
         <section class="lane"><div class="lane-head"><span class="eyebrow">Import & match · via Tracearr</span><span class="lane-meta">first-class</span></div><hr class="hair"><div class="lane-body">${trOk ? `<div class="connect-note" style="padding:12px"><div class="cn-sub">Tracearr is connected — scan/import telemetry isn't exposed by its public streams endpoint yet. <a href="#/media">Streams are live on Media →</a></div></div>` : connectNote('Connect Tracearr', 'Scan, import and match activity appears here once Tracearr is reachable.')}</div></section>
         <section class="lane"><div class="lane-head"><span class="eyebrow">Recently added to library</span><span class="lane-meta">${recent.length ? recent.length + ' shown · via Sonarr · Radarr' : 'via Sonarr · Radarr'}</span></div><hr class="hair"><div class="lane-body">${recentRows || connectNote('Nothing imported recently', 'When Sonarr or Radarr imports a grab it lands here — enable them in <a href="#/settings">Settings → Providers</a>.')}</div></section>
     </div>`;

@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] — 2026-07-08
+
+### Added
+- **Dropped Needle grabs now appear on the Automation "Downloading" lane** alongside
+  qBittorrent/SABnzbd, each with inline **Cancel** (in-flight) / **Retry** (stuck) and a
+  "· N stuck · manage →" link to the full drawer. Acting from the lane refreshes in place
+  (no drawer pop-up), so the pipeline page is a single control surface for everything
+  being acquired.
+
 ## [2.6.0] — 2026-07-08
 
 ### Fixed
