@@ -4,6 +4,17 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] — 2026-07-08
+
+### Fixed
+- **The Automation pipeline was broken on mobile.** The five-stage rail (Search →
+  Grabbed → Downloading → Import & match → Library) wrapped into an overlapping,
+  jumbled two-column grid on phones. It now stacks into a clean single column.
+- **Made the Automation page self-explanatory.** The rail now carries an
+  **"Acquisition pipeline"** header — *the path a request takes to your library, each
+  stage lighting up as it's wired* — so the page's purpose is clear even on phones,
+  where the header subtitle is hidden for space.
+
 ## [2.3.0] — 2026-07-07
 
 ### Added

@@ -1303,7 +1303,14 @@
     .pipebar-row .pb-track { flex: 1; height: 5px; border-radius: 3px; background: var(--s2); overflow: hidden; } .pipebar-row .pb-track i { display: block; height: 100%; background: var(--t3); }
     .pipebar-row .pb-v { flex: 0 0 auto; font-family: var(--mono); font-feature-settings: var(--tnum); font-size: 11px; color: var(--t2); }
     @media (max-width: 1280px) { .pipe-body { grid-template-columns: 1fr; } }
-    @media (max-width: 820px) { .pipe-rail { flex-wrap: wrap; } .pipe-gate { flex-basis: 50%; border-top: 1px solid var(--hair); } .pipe-gate.flowing .pipe-flow { display: none; } }
+    @media (max-width: 820px) {
+        .pipe-rail { flex-direction: column; }
+        .pipe-gate { flex: 0 0 auto; }
+        .pipe-gate + .pipe-gate { border-left: 0; border-top: 1px solid var(--hair); }
+        .pipe-gate.flowing .pipe-flow { display: none; }
+        .pipe-wrap > .lane-head { flex-direction: column; align-items: flex-start; gap: 3px; }
+        .pipe-wrap > .lane-head .lane-meta { white-space: normal; }
+    }
     /* AI — local inference deck */
     .ai-stats { display: flex; align-items: stretch; }
     .ai-stat { flex: 1 1 0; min-width: 0; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
@@ -4666,12 +4673,16 @@ function pipeRail() {
     const dlSpeed = tor.reduce((a, t) => a + (Number(t.dlspeed) || 0), 0) + (sab ? (Number(sab.kbpersec) || 0) * 1024 : 0);
     const dlOk = (Store.qbt && !Store.qbt.error) || !!sab;
     const trOk = Store.tracearr && !Store.tracearr.error;
-    return `<section class="instrument pipe-rail">
+    return `<section class="instrument pipe-wrap">
+        <div class="lane-head"><span class="eyebrow">Acquisition pipeline</span><span class="lane-meta">the path a request takes to your library — each stage lights up as it's wired</span></div>
+        <hr class="hair">
+        <div class="pipe-rail">
         ${pipeGate({ lbl: 'Search', fig: idx.length ? `${idxUp}/${idx.length}` : '—', sub: idx.length ? idx.map(s => s.name).join(' · ') : 'no indexer manager', dot: idx.length ? (idxUp === idx.length ? 'ok' : 'warn') : 'idle', state: idx.length && idxUp < idx.length ? 'warn' : '' })}
         ${queued != null ? pipeGate({ lbl: 'Grabbed', fig: String(queued), sub: 'in *Arr queues', dot: queued ? 'live' : 'idle', state: queued ? 'live' : 'idle', flowing: queued > 0 }) : pipeGate({ lbl: 'Grabbed', connect: true, sub: `${arrUp}/${arrs.length} *Arr up — connect for queue depth` })}
         ${dlOk ? pipeGate({ lbl: 'Downloading', fig: String(dlActive), sub: dlSpeed > 0 ? fmtBytes(dlSpeed) + '/s' : 'idle', dot: dlSpeed > 0 ? 'live' : 'idle', state: dlSpeed > 0 ? 'live' : 'idle', flowing: dlSpeed > 0 }) : pipeGate({ lbl: 'Downloading', connect: true, sub: 'connect qBittorrent / SABnzbd' })}
         ${trOk ? pipeGate({ lbl: 'Import & match', fig: '—', sub: 'telemetry not exposed by Tracearr yet', dot: 'idle', state: 'idle' }) : pipeGate({ lbl: 'Import & match', connect: true, sub: 'via Tracearr' })}
         ${pipeGate({ lbl: 'Library', connect: true, sub: 'recently-added needs Tautulli' })}
+        </div>
     </section>`;
 }
 function dlRows() {
