@@ -1895,7 +1895,7 @@ const INTEGRATIONS = {
             { id: 'pending', path: '/api/v1/requests/pending-approvals/count', optional: true },       // {count} — admin/trusted only
             { id: 'nowplaying', path: '/api/v1/now-playing', optional: true },
             { id: 'releases', path: '/api/v1/following/new-releases?limit=6&offset=0', optional: true },
-            { id: 'downloads', path: '/api/v1/downloads?page=1&page_size=8', optional: true }
+            { id: 'downloads', path: '/api/v1/downloads?page=1&page_size=100&sortKey=date&sortDirection=descending', optional: true }
         ],
         normalize: (r, ctx) => {
             const ok = !!(r.health && String(r.health.status || '').toLowerCase() === 'ok');
@@ -1904,7 +1904,11 @@ const INTEGRATIONS = {
             const sessions = (r.nowplaying && Array.isArray(r.nowplaying.sessions)) ? r.nowplaying.sessions : [];
             const releases = (r.releases && Array.isArray(r.releases.items)) ? r.releases.items : [];
             const dls = (r.downloads && Array.isArray(r.downloads.items)) ? r.downloads.items : [];
-            const activeDls = dls.filter(d => !/^(completed|imported|failed|cancelled|canceled)$/i.test(String(d.status || '')));
+            const dlStat = s => String(s || '').toLowerCase();
+            const dlDownloading = dls.filter(d => /^(downloading|snatching|grabbing)$/.test(dlStat(d.status)));   // actually in flight
+            const dlQueued = dls.filter(d => /^(queued|searching|pending|scheduled|retrying)$/.test(dlStat(d.status)));
+            const dlProblems = dls.filter(d => /^(partial|failed|error)$/.test(dlStat(d.status)));                // stuck grabs — need attention
+            const dlActionable = dls.filter(d => !/^(completed|imported|cancelled|canceled)$/.test(dlStat(d.status)));
             const client = r.client || null;                     // slskd download-client status
             const clientOk = client ? (client.configured && (!client.mount || client.mount.ok !== false)) : null;
             const integr = r.integr || null;                     // which DN sources are wired up
@@ -1914,7 +1918,8 @@ const INTEGRATIONS = {
                 typeof stats.total_albums === 'number' ? { label: 'Albums', value: stats.total_albums, kind: 'stat' } : null,
                 pending != null ? { label: 'Pending requests', value: pending, kind: 'stat', state: pending > 0 ? 'warn' : 'good' } : null,
                 sessions.length ? { label: 'Listening now', value: sessions.length, kind: 'stat', state: 'good' } : null,
-                activeDls.length ? { label: 'Downloading', value: activeDls.length, kind: 'stat', state: 'good' } : null,
+                dlDownloading.length ? { label: 'Downloading', value: dlDownloading.length, kind: 'stat', state: 'good' } : (dlQueued.length ? { label: 'Queued', value: dlQueued.length, kind: 'stat' } : null),
+                dlProblems.length ? { label: 'Stuck/failed', value: dlProblems.length, kind: 'stat', state: 'warn' } : null,
                 clientOk != null ? { label: 'slskd', value: clientOk ? 'Connected' : (client.configured ? 'Mount problem' : 'Not configured'), kind: 'text', state: clientOk ? 'good' : 'warn' } : null
             ].filter(Boolean);
             const items = releases.slice(0, 6).map(x => ({
@@ -1930,7 +1935,8 @@ const INTEGRATIONS = {
                     pending,
                     nowPlaying: sessions.slice(0, 4).map(s => ({ track: s.track_name, artist: s.artist_name, album: s.album_name, user: s.user_name, device: s.device_name, paused: !!s.is_paused, source: s.source, cover: s.cover_url || null, progress: (s.progress_ms != null && s.duration_ms) ? Math.round(s.progress_ms / s.duration_ms * 100) : null })),
                     releases: releases.slice(0, 6).map(x => ({ title: x.title, artist: x.artist_name, date: x.first_release_date, type: x.primary_type, mbid: x.release_group_mbid })),
-                    downloads: activeDls.slice(0, 6).map(d => ({ album: d.album_title, artist: d.artist_name, status: d.status, progress: d.progress_percent, files: d.files_total ? `${d.files_completed}/${d.files_total}` : null, error: d.error_message || null })),
+                    downloads: dlActionable.slice(0, 8).map(d => ({ id: d.id, album: d.album_title, artist: d.artist_name, status: d.status, progress: d.progress_percent, files: d.files_total ? `${d.files_completed}/${d.files_total}` : null, error: d.error_message || null })),
+                    dlCounts: { downloading: dlDownloading.length, queued: dlQueued.length, problems: dlProblems.length },
                     stats: { artists: stats.total_artists, albums: stats.total_albums, tracks: stats.total_tracks, size: stats.total_size_bytes, unmatched: stats.unmatched_count },
                     recentlyAdded: Array.isArray(stats.recently_added) ? stats.recently_added.slice(0, 6).map(a => ({ title: a.album_title, artist: a.album_artist_name, mbid: a.release_group_mbid, cover: a.cover_url || null, year: a.year })) : [],
                     client: clientOk, integrations: integr, base: ctx.base
@@ -2400,8 +2406,11 @@ function demoWidget(type) {
                     { track: 'Self Care', artist: 'Mac Miller', album: 'Swimming', user: 'sam', device: 'Web', paused: true, source: 'jellyfin', cover: null, progress: 71 }
                 ],
                 downloads: [
-                    { album: 'In These Parts', artist: 'Tom MacDonald', status: 'downloading', progress: Math.round(dwave(6000, 8, 68)), files: '1/1', error: null }
+                    { id: 'demo-dl-1', album: 'In These Parts', artist: 'Tom MacDonald', status: 'downloading', progress: Math.round(dwave(6000, 8, 68)), files: '1/1', error: null },
+                    { id: 'demo-dl-2', album: 'Heavydirtysoul', artist: 'twenty one pilots', status: 'partial', progress: 100, files: '1/5', error: '4 files failed' },
+                    { id: 'demo-dl-3', album: 'Bandito', artist: 'twenty one pilots', status: 'failed', progress: 0, files: '0/12', error: 'no source found' }
                 ],
+                dlCounts: { downloading: 1, queued: 0, problems: 2 },
                 releases: [
                     { title: 'Tomorrow’s Boxes', artist: 'Thom Yorke', date: '2026-07-02', type: 'Album', mbid: null },
                     { title: 'New Single', artist: 'Followed Artist', date: '2026-07-06', type: 'Single', mbid: null }
@@ -2458,7 +2467,7 @@ async function demoRoute(req, res) {
             ] }); return true;
         }
         if (what === 'requests') { send({ ok: true, active: [{ album: 'Swimming', artist: 'Mac Miller', status: 'downloading', progress: 42, by: 'you' }], history: [{ album: 'Currents', artist: 'Tame Impala', status: 'completed', by: 'you' }], total: 1 }); return true; }
-        if (what === 'downloads') { send({ ok: true, items: [{ album: 'In These Parts', artist: 'Tom MacDonald', status: 'downloading', progress: 64, files: '1/1' }, { album: 'Currents', artist: 'Tame Impala', status: 'completed', progress: 100, files: '13/13' }] }); return true; }
+        if (what === 'downloads') { send({ ok: true, counts: { downloading: 1, queued: 0, problems: 2, done: 23 }, items: [{ id: 'demo-dl-1', album: 'In These Parts', artist: 'Tom MacDonald', status: 'downloading', progress: 64, files: '1/1' }, { id: 'demo-dl-2', album: 'Heavydirtysoul', artist: 'twenty one pilots', status: 'partial', progress: 100, files: '1/5', error: '4 files failed' }, { id: 'demo-dl-3', album: 'Bandito', artist: 'twenty one pilots', status: 'failed', progress: 0, files: '0/12', error: 'no source found' }] }); return true; }
         if (what === 'play-album') {
             const s = n => '/api/dn/stream?u=' + encodeURIComponent('/api/v1/stream/local/demo' + n);
             send({ ok: true, album: String(body.album || 'Currents'), cover: null, queue: [
@@ -3181,8 +3190,13 @@ const server = http.createServer(async (req, res) => {
                 const slimH = x => ({ album: x.album_title, artist: x.artist_name, status: x.status, at: x.completed_at || x.requested_at, by: x.requested_by_name, inLibrary: !!x.in_library });
                 jsonRes(res, 200, { ok: true, active: (act.items || []).map(slimA), history: (hist.items || []).map(slimH), total: act.count || 0 });
             } else if (what === 'downloads') {
-                const r = await get('/api/v1/downloads?page=1&page_size=20');
-                jsonRes(res, 200, { ok: true, items: (r.items || []).map(d => ({ album: d.album_title, artist: d.artist_name, track: d.track_title, status: d.status, progress: d.progress_percent, files: d.files_total ? d.files_completed + '/' + d.files_total : null, error: d.error_message, source: d.source })) });
+                const r = await get('/api/v1/downloads?page=1&page_size=100&sortKey=date&sortDirection=descending');
+                const all = r.items || [];
+                const st = s => String(s || '').toLowerCase();
+                const counts = { downloading: 0, queued: 0, problems: 0, done: 0 };
+                all.forEach(d => { const s = st(d.status); if (/^(downloading|snatching|grabbing)$/.test(s)) counts.downloading++; else if (/^(queued|searching|pending|scheduled|retrying)$/.test(s)) counts.queued++; else if (/^(partial|failed|error)$/.test(s)) counts.problems++; else counts.done++; });
+                const items = all.filter(d => !/^(completed|imported|cancelled|canceled)$/.test(st(d.status))).slice(0, 60).map(d => ({ id: d.id, album: d.album_title, artist: d.artist_name, track: d.track_title, status: d.status, progress: d.progress_percent, files: d.files_total ? d.files_completed + '/' + d.files_total : null, error: d.error_message, source: d.source }));
+                jsonRes(res, 200, { ok: true, items, counts });
             } else if (what === 'releases') {
                 const r = await get('/api/v1/following/new-releases?limit=24&offset=0');
                 jsonRes(res, 200, { ok: true, items: (r.items || []).map(x => ({ title: x.title, artist: x.artist_name, date: x.first_release_date, type: x.primary_type, mbid: x.release_group_mbid, cover: coverRef({ musicbrainz_id: x.release_group_mbid }) })) });
@@ -3319,6 +3333,22 @@ const server = http.createServer(async (req, res) => {
             } else if (action === 'clear-nowplaying') {
                 const rc = await igFetch(base + '/api/v1/now-playing?device=command-center', { method: 'DELETE', headers });
                 jsonRes(res, 200, { ok: rc.status >= 200 && rc.status < 300 }); return;
+            } else if (action === 'download-cancel' || action === 'download-retry') {
+                // Cancel or retry a single download task, straight from the dashboard.
+                const tid = String(payload.taskId || '').trim();
+                if (!/^[A-Za-z0-9_-]{6,64}$/.test(tid)) { jsonRes(res, 400, { ok: false, error: 'invalid task id' }); return; }
+                const rr = await igFetch(base + '/api/v1/downloads/' + encodeURIComponent(tid) + (action === 'download-retry' ? '/retry' : '/cancel'), { method: 'POST', headers });
+                const okk = rr.status >= 200 && rr.status < 300;
+                auditLog(req, 'droppedneedle.' + action, tid, okk ? 'ok' : 'failed');
+                jsonRes(res, 200, { ok: okk, error: okk ? null : ((rr.body && rr.body.error && rr.body.error.message) || ('HTTP ' + rr.status)) }); return;
+            } else if (action === 'downloads-clear' || action === 'downloads-retry-failed' || action === 'downloads-stop-retries') {
+                // Bulk maintenance on the queue: clear finished, retry all failed, stop auto-retries.
+                const map = { 'downloads-clear': '/api/v1/downloads/clear', 'downloads-retry-failed': '/api/v1/downloads/retry-all-failed', 'downloads-stop-retries': '/api/v1/downloads/stop-all-retries' };
+                const rr = await igFetch(base + map[action], { method: 'POST', headers });
+                const okk = rr.status >= 200 && rr.status < 300;
+                const b = rr.body || {};
+                auditLog(req, 'droppedneedle.' + action, '', okk ? 'ok' : 'failed');
+                jsonRes(res, 200, { ok: okk, count: (b.cleared != null ? b.cleared : (b.retried != null ? b.retried : (b.stopped != null ? b.stopped : null))), error: okk ? null : ('HTTP ' + rr.status) }); return;
             } else { jsonRes(res, 400, { ok: false, error: 'unknown action' }); return; }
             const ok = r.status >= 200 && r.status < 300;
             auditLog(req, 'droppedneedle.' + action, label, ok ? 'ok' : 'failed');

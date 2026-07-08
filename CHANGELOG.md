@@ -4,6 +4,23 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] — 2026-07-08
+
+### Fixed
+- **Dropped Needle's "Downloading" count was wrong.** It counted every non-finished grab
+  — including queued and *stuck/partial* ones — as "downloading", so it read e.g.
+  "Downloading 5" when nothing was actually downloading. The lane now breaks the queue
+  down honestly: **Downloading** (actually in flight), **Queued**, and **Stuck / failed**
+  (partial + failed grabs needing attention). Verified against a live instance —
+  0 downloading, 1 queued, 62 stuck/failed.
+
+### Added
+- **Manage Dropped Needle downloads from the dashboard.** The Downloads drawer now has
+  per-item **Cancel** (in-flight) and **Retry** (stuck/failed), plus bulk **Retry all
+  failed**, **Stop auto-retries**, and **Clear finished** — all proxied through the
+  audited action route with the vaulted token, so you can clear out the stuck pile
+  without opening Dropped Needle.
+
 ## [2.5.0] — 2026-07-08
 
 ### Added

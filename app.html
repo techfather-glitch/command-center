@@ -1844,6 +1844,13 @@
     .dnp-x { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--hair); background: transparent; color: var(--t3); cursor: pointer; }
     .dnp-x:hover { color: var(--t1); border-color: var(--hair-2); }
     body.has-dnplayer .view { padding-bottom: 92px; }
+    .dn-dl-summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .dn-dl-bulk { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .dn-dl-row { align-items: center; }
+    .dn-dl-btn { flex: 0 0 auto; margin-left: 8px; height: 24px; padding: 0 10px; border: 1px solid var(--hair); border-radius: var(--r-well); background: var(--s1); color: var(--t2); font: var(--f-lbl); cursor: pointer; }
+    .dn-dl-btn:hover:not(:disabled) { border-color: var(--hair-2); color: var(--t1); }
+    .dn-dl-btn:disabled { opacity: .6; cursor: default; }
+    .dn-dl-btn.danger { border-color: color-mix(in srgb, var(--crit) 40%, transparent); color: var(--crit); }
 
     /* An element hidden via the `hidden` attribute must stay hidden: author
        `display` rules (like .onboard's below) otherwise beat the UA
@@ -4542,9 +4549,33 @@ window.openDnDrawer = async function (kind) {
         const hist = (r.history || []).map(x => `<div class="dn-np"><span class="dot ${/complete|approved|imported/i.test(x.status) ? 'ok' : /reject|fail|denied/i.test(x.status) ? 'crit' : 'idle'}"></span><span class="dn-np-t">${esc(x.album || '')}</span><span class="dn-np-a">${esc([x.artist, x.status, x.by ? 'by ' + x.by : ''].filter(Boolean).join(' · '))}</span></div>`).join('');
         body.innerHTML = `${act ? `<div class="svc-group__label">Active · ${r.active.length}</div>${act}` : '<div class="lbl" style="padding:6px 2px">No active requests.</div>'}${hist ? `<div class="svc-group__label" style="margin-top:10px">Recent history</div>${hist}` : ''}`;
     } else {
-        const rows = (r.items || []).map(d => `<div class="dn-np"><span class="dot ${d.error ? 'crit' : /^(completed|imported)$/i.test(d.status || '') ? 'ok' : 'live'}"></span><span class="dn-np-t">${esc(d.album || d.track || 'item')}</span><span class="dn-np-a">${esc([d.artist, d.status, d.files, d.source].filter(Boolean).join(' · '))}${d.error ? ` · <em style="color:var(--crit);font-style:normal">${esc(d.error)}</em>` : ''}</span>${d.progress != null ? `<span class="dn-np-prog mono">${d.progress}%</span>` : ''}</div>`).join('');
-        body.innerHTML = rows || '<div class="lbl" style="padding:6px 2px">No downloads on record.</div>';
+        const c = r.counts || {};
+        const cc = (lbl, v, state) => v ? `<span class="dn-chip"${state ? ` data-state="${state}"` : ''}><span class="dn-chip-k">${lbl}</span><span class="dn-chip-v mono">${v}</span></span>` : '';
+        const summary = `<div class="dn-dl-summary">${(cc('Downloading', c.downloading, 'live') + cc('Queued', c.queued, '') + cc('Stuck / failed', c.problems, 'warn')) || '<span class="lbl">Nothing in progress right now.</span>'}</div>`;
+        const bulk = `<div class="dn-dl-bulk">${c.problems ? `<button class="tbtn" onclick="dnDlBulk('downloads-retry-failed', this)">Retry all failed</button>` : ''}<button class="tbtn" onclick="dnDlBulk('downloads-stop-retries', this)">Stop auto-retries</button><button class="tbtn" onclick="dnDlBulk('downloads-clear', this)">Clear finished</button></div>`;
+        const rows = (r.items || []).map(d => {
+            const failed = /^(failed|partial|error)$/i.test(d.status || '');
+            const dot = (d.error || failed) ? 'crit' : /^(downloading|snatching)$/i.test(d.status || '') ? 'live' : 'idle';
+            const ctrl = d.id ? (failed ? `<button class="dn-dl-btn" onclick="dnDlAction('${esc(d.id)}','retry',this)">Retry</button>` : `<button class="dn-dl-btn danger" onclick="dnDlAction('${esc(d.id)}','cancel',this)">Cancel</button>`) : '';
+            return `<div class="dn-np dn-dl-row"><span class="dot ${dot}"></span><span class="dn-np-t">${esc(d.album || d.track || 'item')}</span><span class="dn-np-a">${esc([d.artist, d.status, d.files].filter(Boolean).join(' · '))}${d.error ? ` · <em style="color:var(--crit);font-style:normal">${esc(d.error)}</em>` : ''}</span>${d.progress != null ? `<span class="dn-np-prog mono">${d.progress}%</span>` : ''}${ctrl}</div>`;
+        }).join('');
+        body.innerHTML = `${summary}${bulk}${rows || '<div class="lbl" style="padding:6px 2px">Nothing in progress or stuck — the queue is clear.</div>'}`;
     }
+};
+/* Download controls — cancel / retry a single grab, or bulk-manage the queue. Each
+   proxies through the audited /api/dn/action; the drawer refreshes to show the result. */
+window.dnDlAction = async function (taskId, kind, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = kind === 'retry' ? 'Retrying…' : 'Cancelling…'; }
+    let r; try { r = await jpost('/api/dn/action', { action: kind === 'retry' ? 'download-retry' : 'download-cancel', taskId }); } catch (e) { r = { ok: false, error: e.message }; }
+    if (r && r.ok) { toast(kind === 'retry' ? 'Retrying ✓' : 'Cancelled ✓'); openDnDrawer('downloads'); }
+    else { if (btn) { btn.disabled = false; btn.textContent = kind === 'retry' ? 'Retry' : 'Cancel'; } toast('Failed: ' + ((r && r.error) || 'unknown')); }
+};
+window.dnDlBulk = async function (action, btn) {
+    const prev = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
+    let r; try { r = await jpost('/api/dn/action', { action }); } catch (e) { r = { ok: false, error: e.message }; }
+    if (r && r.ok) { toast((r.count != null ? r.count + ' ' : '') + 'done ✓'); openDnDrawer('downloads'); }
+    else { if (btn) { btn.disabled = false; btn.textContent = prev; } toast('Failed: ' + ((r && r.error) || 'unknown')); }
 };
 /* Playlists drawer — your playlists plus others' public ones. The "whose" chips filter
    by owner so you can jump to your own; each card plays through the in-dashboard player. */
@@ -4596,12 +4627,13 @@ function dnSection() {
         ? `<a class="dn-chip" href="${esc(href)}" target="_blank" rel="noopener"${state ? ` data-state="${state}"` : ''}><span class="dn-chip-k">${esc(label)}</span><span class="dn-chip-v mono">${esc(String(val))}</span><span class="dn-chip-go">↗</span></a>`
         : `<span class="dn-chip"${state ? ` data-state="${state}"` : ''}><span class="dn-chip-k">${esc(label)}</span><span class="dn-chip-v mono">${esc(String(val))}</span></span>`;
     const st = dn.stats || {};
-    const np = dn.nowPlaying || [], dls = dn.downloads || [];
+    const np = dn.nowPlaying || [], dls = dn.downloads || [], dc = dn.dlCounts || {};
     // Counts open IN-DASHBOARD drawers; only the library browsers link out.
     const drawerChip = (label, val, state, kind) => `<button class="dn-chip"${state ? ` data-state="${state}"` : ''} onclick="openDnDrawer('${kind}')"><span class="dn-chip-k">${esc(label)}</span><span class="dn-chip-v mono">${esc(String(val))}</span></button>`;
     const chips = [
         dn.pending != null ? drawerChip('Pending requests', dn.pending, dn.pending > 0 ? 'warn' : '', 'requests') : '',
-        dls.length ? drawerChip('Downloading', dls.length, 'live', 'downloads') : drawerChip('Downloads', 'view', '', 'downloads'),
+        dc.downloading ? drawerChip('Downloading', dc.downloading, 'live', 'downloads') : (dc.queued ? drawerChip('Queued', dc.queued, 'warn', 'downloads') : drawerChip('Downloads', 'manage', '', 'downloads')),
+        dc.problems ? drawerChip('Stuck / failed', dc.problems, 'warn', 'downloads') : '',
         drawerChip('Playlists', 'play', '', 'playlists'),
         st.artists != null ? chip('Artists', st.artists, '', link('/library/artists')) : '',
         st.albums != null ? chip('Albums', st.albums, '', link('/library/albums')) : '',
@@ -4619,7 +4651,7 @@ function dnSection() {
             <div class="dn-chips" style="margin-top:12px">${chips}</div>
             <div class="dn-search"><input class="deck-search" id="dnQ" aria-label="Search artists and albums" placeholder="Search artists & albums…" value="${esc(_dnQuery)}" onkeydown="dnSearch('${esc(base)}', event)"><button class="da-btn" onclick="dnSearch('${esc(base)}')">Search</button></div>
             <div id="dnResults">${_dnResHtml}</div>
-            ${dlRows ? `<div class="svc-group__label">Acquiring · via slskd</div>${dlRows}` : ''}
+            ${dlRows ? `<div class="svc-group__label">Downloads · <a href="#" onclick="openDnDrawer('downloads');return false" style="color:var(--t3)">manage (cancel / retry) →</a></div>${dlRows}` : ''}
             ${rel ? `<div class="svc-group__label">New releases · artists you follow</div><div class="dn-rels">${rel}</div>`
               : recent ? `<div class="svc-group__label">Recently added to the library</div><div class="dn-rels">${recent}</div>`
               : `<div class="lbl" style="padding:6px 2px">No unseen releases from followed artists — <a href="${esc(link('/discover'))}" target="_blank" rel="noopener" style="color:var(--t3)">open Discover ↗</a></div>`}
