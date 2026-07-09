@@ -1761,6 +1761,16 @@
     .pv-kind { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--t4); border: 1px solid var(--hair); border-radius: 4px; padding: 2px 6px; flex: 0 0 auto; }
     .pv-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; }
     .pv-fact { font: var(--f-lbl); color: var(--t3); }
+    .pv-addr { margin-left: auto; height: 22px; padding: 0 8px; border: 1px solid var(--hair); border-radius: var(--r-well); background: var(--s0); color: var(--t3); font-size: 11px; cursor: pointer; }
+    .pv-addr:hover { border-color: var(--hair-2); color: var(--t1); }
+    .ts-dev { display: flex; align-items: center; gap: 10px; min-height: 36px; border-top: 1px solid var(--hair); }
+    .ts-dev:first-of-type { border-top: 0; }
+    .ts-dev-n { font: var(--f-row); color: var(--t1); min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ts-upd { font-style: normal; font-size: 9px; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: 4px; padding: 1px 4px; margin-left: 5px; vertical-align: 1px; }
+    .ts-dev-os { font: var(--f-lbl); color: var(--t4); flex: 1; text-transform: capitalize; }
+    .ts-dev-ip { flex: 0 0 auto; height: 24px; padding: 0 9px; border: 1px solid var(--hair); border-radius: var(--r-well); background: var(--s1); color: var(--t2); cursor: pointer; font-size: 11.5px; }
+    .ts-dev-ip:hover { border-color: var(--live); color: var(--t1); }
+    .ts-dev-seen { flex: 0 0 auto; font-size: 10.5px; color: var(--t4); min-width: 54px; text-align: right; }
     .pv-err { font: var(--f-lbl); color: var(--warn); }
     .pv-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: auto; }
     .pv-add { align-items: center; justify-content: center; text-align: center; border-style: dashed; border-color: var(--hair-2); cursor: pointer; background: transparent; min-height: 120px; }
@@ -2185,6 +2195,8 @@
     .prov-chip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: var(--r-pill); border: 1px solid var(--hair); background: var(--s0); font: var(--f-lbl); color: var(--t3); text-decoration: none; }
     .prov-chip.on { color: var(--t1); border-color: var(--hair-2); background: var(--s1); }
     .prov-chip i { color: var(--t4); font-style: normal; }
+    .prov-chip[role="button"]:hover { border-color: var(--live); }
+    .prov-ip { font-size: 10.5px; opacity: .9; }
     .prov-chip.degraded { color: var(--warn-ink); border-color: color-mix(in srgb, var(--warn) 34%, var(--hair)); }
     .fresh-stale { margin-left: auto; font: var(--f-lbl); font-family: var(--mono); color: var(--warn-ink); display: inline-flex; align-items: center; gap: 6px; }
     .fresh-stale::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); opacity: .8; }
@@ -4256,7 +4268,9 @@ function opsInsights(s) {
     const relHtml = related.length ? `<div class="rel-wrap">${related.map(r => `<span class="rel-chip" data-svc="${esc(r.name)}"><span class="dot ${svcState(r) === 'healthy' ? 'ok' : svcState(r) === 'warning' ? 'warn' : 'crit'}"></span>${esc(r.name)}</span>`).join('')}</div>` : `<div class="lbl">None in this group.</div>`;
     const ribbon = svcUptimeStrip(s.name) || '<div class="lbl">warming up…</div>';
     const lastInc = acts.find(a => a.state !== 'healthy');
-    return `<section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Health history</span><span class="lane-meta">${svcHist[s.name] ? svcHist[s.name].filter(r => r.ok > 0).length + '/' + svcHist[s.name].length + ' up' : ''}</span></div><hr class="hair"><div class="lane-body">${ribbon}<div class="insight-row" style="border-top:0;margin-top:6px"><span>Last incident</span><span class="ir-ts">${lastInc ? fmtAgo(lastInc.ts) : '—'}</span></div></div></section>
+    const addr = s.url || (s.host ? ('http://' + s.host + (s.port ? ':' + s.port : '')) : '');
+    return `${addr ? `<section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Address</span></div><hr class="hair"><div class="lane-body"><button class="det-btn mono" onclick="copyText('${esc(addr)}')" title="Copy ${esc(addr)}" style="width:100%;justify-content:flex-start;font-family:var(--mono)">${esc(hostOf(addr))} ⧉</button></div></section>` : ''}
+        <section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Health history</span><span class="lane-meta">${svcHist[s.name] ? svcHist[s.name].filter(r => r.ok > 0).length + '/' + svcHist[s.name].length + ' up' : ''}</span></div><hr class="hair"><div class="lane-body">${ribbon}<div class="insight-row" style="border-top:0;margin-top:6px"><span>Last incident</span><span class="ir-ts">${lastInc ? fmtAgo(lastInc.ts) : '—'}</span></div></div></section>
         <section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Recent activity</span></div><hr class="hair"><div class="lane-body">${errRows}</div></section>
         <section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Actions</span></div><hr class="hair"><div class="lane-body"><div class="insight-actions">${actionsHtml}</div></div></section>
         <section class="lane insight-lane"><div class="lane-head"><span class="eyebrow">Related · ${esc(opsGroup(s))}</span></div><hr class="hair"><div class="lane-body">${relHtml}</div></section>`;
@@ -4274,7 +4288,9 @@ function providerStrip(conceptId) {
         const degraded = !x.connected && /error|auth|fail/i.test(x.note || '');   // configured but broken ≠ not set
         const dot = x.connected ? 'ok' : degraded ? 'warn' : 'idle';
         const title = x.connected ? 'connected' : degraded ? 'degraded' : 'not connected';
-        return `<span class="prov-chip ${x.connected ? 'on' : degraded ? 'degraded' : ''}" title="${title}${x.note ? ' · ' + esc(x.note) : ''}"><span class="dot ${dot}"></span>${esc(x.name)}${x.note ? ` <i>${esc(x.note)}</i>` : ''}</span>`;
+        const addr = providerAddr({ id: x.id, title: x.name });   // its local address — click the chip to copy
+        const host = addr ? hostOf(addr) : '';
+        return `<span class="prov-chip ${x.connected ? 'on' : degraded ? 'degraded' : ''}"${addr ? ` role="button" tabindex="0" onclick="copyText('${esc(addr)}')" onkeydown="if(event.key==='Enter'){event.preventDefault();this.click();}" style="cursor:pointer"` : ''} title="${title}${x.note ? ' · ' + esc(x.note) : ''}${host ? ' · ' + esc(host) + ' (click to copy)' : ''}"><span class="dot ${dot}"></span>${esc(x.name)}${host ? ` <i class="prov-ip mono">${esc(host)}</i>` : (x.note ? ` <i>${esc(x.note)}</i>` : '')}</span>`;
     };
     const FRESH_SRC = { media: 'tracearr', automation: 'downloaders', storage: 'host', compute: 'host', networking: 'unifi', applications: 'containers', observability: 'status' };
     return `<div class="provider-strip"><span class="eyebrow">Providers</span>${p.map(cell).join('')}<a class="prov-chip add" href="#/settings">+ add provider</a>${freshTag(FRESH_SRC[conceptId])}</div>`;
@@ -6143,8 +6159,42 @@ window.testProvider = async function (id) {
 };
 /* provider → freshness-ledger source, for the "last sync" readout */
 const PROV_FRESH = { tracearr: 'tracearr', nodeexp: 'host', unifi: 'unifi', truenas: 'truenas', cadvisor: 'containers', docker: 'containers', nodefs: 'host' };
+/* Copy-to-clipboard with an execCommand fallback for non-secure LAN contexts. */
+window.copyText = function (t) { t = String(t || ''); if (!t) return; const done = () => toast('Copied ' + (t.length > 44 ? t.slice(0, 44) + '…' : t)); if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(done).catch(() => fallbackCopy(t, done)); } else fallbackCopy(t, done); };
+function fallbackCopy(t, done) { try { const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.focus(); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done(); } catch (e) { toast('Copy failed'); } };
+function hostOf(u) { const s = String(u || ''); try { return new URL(s).host || s; } catch (e) { return s.replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, ''); } }
+/* Resolve a provider's configured address (catalog URL, native endpoint, or its monitored host). */
+function providerAddr(p) {
+    if (!p) return '';
+    const s = Store.settings || {};
+    const cat = (Store.integrations || []).find(x => x.id === p.id);
+    if (cat && cat.url) return cat.url;
+    if (p.id === 'docker') return s.dockerHost || '';
+    if (p.id === 'unifi') return (s.unifi && s.unifi.url) || '';
+    const ep = s.endpoints || {};
+    if (ep[p.title] && ep[p.title].url) return ep[p.title].url;
+    if (ep[p.id] && ep[p.id].url) return ep[p.id].url;
+    const svc = (Store.services || []).find(x => x.name === p.title || x.name === p.id);
+    if (svc) return svc.url || (svc.host ? ('http://' + svc.host + (svc.port ? ':' + svc.port : '')) : '');
+    return (p.links && p.links.open) || '';
+}
+/* Copyable address chip — click to copy the full URL, shows the host:port. */
+function addrChip(addr) { return addr ? `<button class="pv-addr mono" onclick="copyText('${esc(addr)}')" title="Copy ${esc(addr)}">${esc(hostOf(addr))} ⧉</button>` : ''; }
+/* Tailscale device browser — your tailnet at a glance, each device's 100.x IP one click to copy. */
+window.openTsDrawer = async function (id) {
+    id = id || 'tailscale';
+    openDrawer(`${iconImg('Tailscale', 22)}Tailscale devices`, 'your tailnet · click an IP to copy', '<div class="g-skel" style="height:120px"></div>', '');
+    let w = Store.widgets[id];
+    if (!w || !w.tailscale) { try { await refreshWidget(id); } catch (e) {} w = Store.widgets[id]; }
+    const body = document.querySelector('#drawer .drawer-body'); if (!body) return;
+    const devs = (w && w.tailscale && w.tailscale.devices) || [];
+    if (!devs.length) { body.innerHTML = (w && w.ok === false) ? `<div class="connect-note"><div class="cn-sub">Can't reach Tailscale: ${esc(errText(w.error) || 'unreachable')}</div></div>` : '<div class="lbl" style="padding:6px 2px">No devices — connect Tailscale in Settings → Providers with an API access token.</div>'; return; }
+    const online = devs.filter(d => d.online).length;
+    body.innerHTML = `<div class="svc-group__label" style="padding-top:0">${devs.length} device${devs.length === 1 ? '' : 's'} · ${online} online</div>${devs.map(d => `<div class="ts-dev"><span class="dot ${d.online ? 'ok' : 'idle'}"></span><span class="ts-dev-n">${esc(d.name)}${d.update ? ' <i class="ts-upd">update</i>' : ''}</span><span class="ts-dev-os">${esc(d.os || '')}</span>${d.ip ? `<button class="ts-dev-ip mono" onclick="copyText('${esc(d.ip)}')" title="Copy ${esc(d.ip)}">${esc(d.ip)} ⧉</button>` : ''}<span class="ts-dev-seen">${d.online ? 'online' : (d.lastSeen ? fmtAgo(new Date(d.lastSeen).getTime()) : '—')}</span></div>`).join('')}`;
+};
 function providerCard(p) {
     const cat = p.kind === 'catalog' ? (Store.integrations || []).find(x => x.id === p.id) : null;
+    const addr = providerAddr(p);
     const health = p.errorState ? (p.healthState === 'offline' ? 'crit' : 'warn') : p.setupState !== 'connected' ? 'idle' : p.healthState === 'ok' ? 'ok' : 'idle';
     const healthTxt = p.errorState ? (p.healthState === 'offline' ? 'unreachable' : 'degraded') : p.setupState !== 'connected' ? 'not configured' : 'connected';
     const freshKey = PROV_FRESH[p.id];
@@ -6152,11 +6202,12 @@ function providerCard(p) {
     const rt = p.realtime && p.realtime.channel ? `SSE · ${p.realtime.channel}` : `poll ${Math.round(((p.realtime || {}).interval || 20000) / 1000)}s`;
     return `<div class="pv-card" data-state="${health === 'ok' ? '' : health}">
         <div class="pv-head">${iconImg(p.title, 28)}<div class="pv-id"><span class="pv-name">${esc(p.title)}</span><span class="pv-meta"><span class="dot ${health}"></span>${healthTxt}${sync ? ' · synced ' + sync : ''}</span></div><span class="pv-kind">${p.kind === 'catalog' ? 'integration' : 'native'}</span></div>
-        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}</div>
+        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}${addrChip(addr)}</div>
         ${p.errorState ? `<div class="pv-err">${esc(p.errorState.message)}</div>` : ''}
         <div class="pv-acts">
             <button class="tbtn" onclick="openProviderCfg('${esc(p.id)}')">Configure</button>
             <button class="tbtn" onclick="testProvider('${esc(p.id)}')">Test</button>
+            ${String(p.id).split('#')[0] === 'tailscale' && cat && cat.enabled ? `<button class="tbtn" onclick="openTsDrawer('${esc(p.id)}')">Devices ↗</button>` : ''}
             ${cat && cat.enabled && cat.actions ? cat.actions.map(a => `<button class="tbtn${a.danger ? ' danger' : ''}" onclick="runProviderAction('${esc(p.id)}','${esc(a.id)}')" title="Control action">${esc(a.label)}</button>`).join('') : ''}
             ${cat && cat.enabled ? `<button class="tbtn danger" onclick="igDisable('${esc(p.id)}')">Disable</button>` : ''}
             ${p.links && p.links.open ? `<button class="tbtn" onclick="window.open('${esc(p.links.open)}','_blank','noopener')">Open ↗</button>` : ''}

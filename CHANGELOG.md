@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] — 2026-07-08
+
+### Added
+- **Each service's local address, visible and click-to-copy.** Every provider card
+  (Settings → Providers) and every concept-page provider chip now shows the service's
+  `host:port` — click it to copy the full URL. The Observability service detail gets an
+  Address panel too. Works for catalog integrations (incl. extra instances), native
+  providers, and monitored services.
+- **A Tailscale device browser.** The Tailscale card gets a **Devices ↗** button that
+  opens a drawer of your whole tailnet — each device's name, **`100.x` IP (click to
+  copy)**, OS, online status and last-seen, plus an "update" badge where a client update
+  is available. Verified against a live tailnet.
+
 ## [2.6.1] — 2026-07-08
 
 ### Added
