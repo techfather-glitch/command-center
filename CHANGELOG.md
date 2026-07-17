@@ -4,6 +4,14 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.3] — 2026-07-17
+
+### Fixed
+- **The Tiles settings section showed the Providers page.** The new **Tiles** section was wired into
+  the settings rail and the body dispatcher, but not into the section-header map that validates the
+  destination — so it silently fell back to Providers, making the two look identical. Tiles now
+  renders its own custom-tiles page.
+
 ## [2.9.2] — 2026-07-17
 
 ### Fixed
