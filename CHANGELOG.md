@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.10] — 2026-07-17
+
+### Added
+- **More stats on more tiles — all from data those services already return.** Following Plex / SABnzbd /
+  Overseerr in 2.9.9: **Jellyfin** adds Series + Albums, **Portainer** adds Images / Stacks / Volumes,
+  **Proxmox** adds a VMs/LXC split + Storage %, **Nextcloud** adds Active-24h + Shares (and reports its
+  version), and **TrueNAS** adds Cores (and its version). Trim any you don't want with the per-tile field
+  toggles from 2.9.9.
+
 ## [2.9.9] — 2026-07-17
 
 ### Added
