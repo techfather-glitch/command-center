@@ -4408,14 +4408,21 @@ function mediaImpactStrip() {
     </div><div class="impact-note">correlation, not per-process attribution — no transcode-CPU source exists</div></section>`;
 }
 function mediaHistoryRail() {
-    const w = Store.widgets && Store.widgets.tautulli;
-    const tautulliOn = enabledIntegrations().some(d => d.id === 'tautulli');
-    const recent = (tautulliOn && w && w.ok !== false && Array.isArray(w.items) && w.items.length)
-        ? w.items.slice(0, 8).map(it => `<div class="insight-row"><span class="dot ${it.state === 'bad' ? 'crit' : 'ok'}"></span><span>${esc(it.label)}</span><span class="ir-ts">${esc(it.sub || '')}</span></div>`).join('')
+    // Detect Tautulli by base type so a renamed instance (tautulli#2) still counts,
+    // and read that instance's own widget.
+    const td = enabledIntegrations().find(d => (d.baseType || d.id) === 'tautulli');
+    const w = td && Store.widgets && Store.widgets[td.id];
+    const on = !!(td && w && w.ok !== false);
+    const recRow = it => `<div class="insight-row"><span class="dot ${it.state === 'bad' ? 'crit' : 'ok'}"></span><span>${esc(it.label)}${it.sub ? ' <span style="color:var(--t3)">· ' + esc(it.sub) + '</span>' : ''}</span><span class="ir-ts">${it.at ? esc(fmtAgo(it.at)) : ''}</span></div>`;
+    const probRow = p => `<div class="insight-row"><span class="dot warn"></span><span>${esc(p.label)}${p.sub ? ' <span style="color:var(--t3)">· ' + esc(p.sub) + '</span>' : ''}</span><span class="ir-ts">${p.at ? esc(fmtAgo(p.at)) : ''}</span></div>`;
+    const recent = (on && Array.isArray(w.items) && w.items.length)
+        ? w.items.slice(0, 8).map(recRow).join('')
         : connectNote('Connect Tautulli', 'Add Tautulli in <a href="#/settings">Settings → Integrations</a> to see watch history and per-user activity here.');
-    const problems = tautulliOn && w && w.ok !== false
-        ? `<div class="lbl" style="padding:8px 0">No problem streams flagged.</div>`
-        : connectNote('Problem streams', 'Repeat transcodes, buffering and low-bandwidth sessions surface here once Tautulli is connected.');
+    const problems = !on
+        ? connectNote('Problem streams', 'Repeat transcodes, buffering and low-bandwidth sessions surface here once Tautulli is connected.')
+        : (Array.isArray(w.problems) && w.problems.length)
+            ? w.problems.slice(0, 6).map(probRow).join('')
+            : `<div class="lbl" style="padding:8px 0">No problem streams flagged.</div>`;
     return `<section class="lane"><div class="lane-head"><span class="eyebrow">History & problems</span><span class="lane-meta">via Tautulli</span></div><hr class="hair"><div class="history-grid"><div><div class="svc-group__label" style="padding-top:0">Recently watched</div>${recent}</div><div><div class="svc-group__label" style="padding-top:0">Problem streams</div>${problems}</div></div></section>`;
 }
 /* ═══ Dropped Needle — first-class music discovery lane on the Media page.

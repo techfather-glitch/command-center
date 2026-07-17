@@ -42,6 +42,12 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   open or a provider's config expanded — so the panel stays put and a field you're filling
   in can't be wiped a few seconds after you open it. The next refresh catches up once you're
   done.
+- **The media "History & Problems" panel now actually populates.** Its "Recently watched"
+  and "Problem streams" columns expected Tautulli watch history that the integration never
+  fetched — it only polled current activity — so both stayed on the "Connect Tautulli" note
+  even with Tautulli connected. Tautulli now also pulls history: recently-watched fills from
+  real sessions and problem streams flags transcodes. A renamed Tautulli instance is
+  detected too.
 
 ## [2.7.0] — 2026-07-08
 
