@@ -4,6 +4,14 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.7] — 2026-07-17
+
+### Fixed
+- **Mobile "Live activity" wording no longer breaks awkwardly.** The Direct Play / Transcode mode
+  badges wrapped mid-phrase ("Direct" / "Play"), and the "Live activity · who's on it" header collided
+  with its "N streams · updated" meta on narrow screens. Badges now stay on one line, and the header
+  stacks cleanly on phones.
+
 ## [2.9.6] — 2026-07-17
 
 ### Added

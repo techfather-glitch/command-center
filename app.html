@@ -2030,6 +2030,12 @@
         .deck-live-grid { grid-template-columns: 1fr; }
         .deck-consumers { border-left: 0; border-top: 1px solid var(--hair); }
         .deck-calm-sub { white-space: normal; }
+        /* Live activity: stack the header so the eyebrow + meta stop colliding, and keep
+           the mode badge (Direct Play / Transcode) on one line beside the row. */
+        .deck-live > .lane-head { flex-direction: column; align-items: flex-start; gap: 4px; }
+        .deck-live > .lane-head .lane-meta { white-space: nowrap; }
+        .deck-stream { gap: 10px; }
+        .deck-stream > .sbadge { flex: 0 0 auto; align-self: center; }
         .fs-ribbon { flex-wrap: nowrap; }
         .da-cov { margin-left: 0; width: 100%; }
         /* Compute: single-column cockpit, shorter hero */
@@ -2177,7 +2183,7 @@
     .stream-title { font: var(--f-read); color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .stream-sub { font: var(--f-lbl); color: var(--t3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .stream-badges { display: flex; gap: 6px; flex-wrap: wrap; flex: 0 0 auto; }
-    .sbadge { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: var(--r-pill); border: 1px solid var(--hair); background: var(--s2); font: var(--f-lbl); color: var(--t2); }
+    .sbadge { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: var(--r-pill); border: 1px solid var(--hair); background: var(--s2); font: var(--f-lbl); color: var(--t2); white-space: nowrap; }
     .sbadge svg { width: 11px; height: 11px; }
     .sbadge.tc { border-color: color-mix(in srgb, var(--warn) 40%, var(--hair)); color: var(--warn-ink); } .sbadge.dp { border-color: color-mix(in srgb, var(--ok) 34%, var(--hair)); color: var(--ok-ink); } .sbadge.ds { color: var(--info); border-color: color-mix(in srgb, var(--info) 34%, var(--hair)); }
     .sbadge.pause { color: var(--t3); }
