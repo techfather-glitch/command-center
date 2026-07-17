@@ -2440,7 +2440,7 @@ const Providers = (() => {
             if ([...enabledIds].some(id => { const idf = id.replace(/[^a-z0-9]/g, ''); return flat.includes(idf) || (iconSlug(s.name) && iconSlug(s.name) === iconSlug(id)); })) return;
             out.push(P({
                 id: 'svc:' + s.name.toLowerCase(), title: s.name, icon: s.name, kind: 'service', category: s.type, concepts: [concept], role: 'probe',
-                healthState: svcOnline(s) ? 'ok' : 'offline', data: s, links: { open: s.url || '' }, source: 'port probe'
+                healthState: svcOnline(s) ? 'ok' : 'offline', data: s, links: { open: s.url || '', external: externalFor(s.name) }, source: 'port probe'
             }));
         });
         // Invariant: a source that reports `configured: false` is simply NOT set up —
@@ -6123,8 +6123,7 @@ let _setDest = 'providers', _setQ = '';
 const SET_SECTIONS = [
     { id: 'general',    ico: 'gear',    label: 'General',        sub: 'Name & landing page' },
     { id: 'appearance', ico: 'grid',    label: 'Appearance',     sub: 'Accent, font, density' },
-    { id: 'tiles',      ico: 'apps',    label: 'Tiles',          sub: 'Bookmarks & custom widgets' },
-    { id: 'providers',  ico: 'layers',  label: 'Providers',      sub: 'Everything connected' },
+    { id: 'providers',  ico: 'layers',  label: 'Providers',      sub: 'Everything connected · custom tiles' },
     { id: 'fleet',      ico: 'server',  label: 'Fleet & probes', sub: 'Your service watchlist' },
     { id: 'security',   ico: 'bell',    label: 'Security',       sub: 'Score, secrets, audit' },
     { id: 'automation', ico: 'flow',    label: 'Automation',     sub: 'Realtime & cadences' },
@@ -6134,7 +6133,7 @@ const SET_SECTIONS = [
 /* Searchable index over every setting — section + label + keywords. */
 const SET_INDEX = [
     ['general', 'Application name', 'title brand rename'], ['general', 'Landing page', 'home default start route'], ['general', 'Recently changed', 'history recent'], ['general', 'Run setup wizard', 'first-run onboarding re-run guided setup'],
-    ['appearance', 'Accent color', 'theme palette colour'], ['appearance', 'Text size', 'font scale zoom bigger larger compact'], ['appearance', 'Font', 'typeface family typography'], ['appearance', 'Live Activity title', 'episode series stream media'], ['appearance', 'Density', 'compact comfortable spacing'], ['appearance', 'Reduced motion', 'animation accessibility a11y'], ['tiles', 'Custom tiles', 'bookmark iframe widget api tile'],
+    ['appearance', 'Accent color', 'theme palette colour'], ['appearance', 'Text size', 'font scale zoom bigger larger compact'], ['appearance', 'Font', 'typeface family typography'], ['appearance', 'Live Activity title', 'episode series stream media'], ['appearance', 'Density', 'compact comfortable spacing'], ['appearance', 'Reduced motion', 'animation accessibility a11y'], ['providers', 'Custom tiles', 'bookmark iframe widget api tile'],
     ['providers', 'Provider cards', 'connect integration configure test'], ['providers', 'UniFi', 'network controller'], ['providers', 'Docker', 'containers socket'], ['providers', 'Grafana', 'panels token'], ['providers', 'TrueNAS', 'storage api key'], ['providers', 'Tracearr', 'media streams key'], ['providers', 'Dropped Needle', 'music plex sign in'], ['providers', 'Add provider', 'catalog browse integration'],
     ['fleet', 'Add service', 'probe monitor port'], ['fleet', 'Hidden services', 'restore hide'],
     ['security', 'Security score', 'posture rating'], ['security', 'Audit journal', 'log actions history'], ['security', 'Stored credentials', 'keys secrets vault masked'], ['security', 'Authentication', 'password login gate'],
@@ -6210,6 +6209,7 @@ function servicesLedger(customNames, hidden) {
         <input class="set-input" id="svcPort" placeholder="Port" style="max-width:90px">
         <input class="set-input" id="svcType" placeholder="Type" style="max-width:130px">
         <input class="set-input" id="svcUrl" placeholder="URL (optional)">
+        <input class="set-input" id="svcExt" placeholder="External URL (optional)">
         <button class="tbtn primary" onclick="addService()">Add service</button>
     </div>
     <section class="lane svc-ledger" style="margin-top:12px">
@@ -6245,6 +6245,7 @@ function nativeCfgForm(id) {
         const url = (s.endpoints && s.endpoints[svcName] && s.endpoints[svcName].url) || '';
         return `<div class="set-desc" style="margin-bottom:10px">${desc}</div>
             ${field('Address (URL)', 'np_url_' + id, url, ph)}
+            ${field('External URL', 'np_ext_' + id, (s.endpoints && s.endpoints[svcName] && s.endpoints[svcName].externalUrl) || '', 'https://service.example.com — reach it anywhere (optional)')}
             ${needsKey ? credField('API key', 'np_key_' + id, keyOf(svcName)) : ''}
             <button class="tbtn primary" style="margin-top:8px" onclick="saveNativeProbe('${id}', ${jstr(svcName)}, ${needsKey})">Save &amp; connect</button>`;
     }
@@ -6252,8 +6253,9 @@ function nativeCfgForm(id) {
 }
 window.saveNativeProbe = async function (id, svcName, hasKey) {
     const url = gv('np_url_' + id).trim();
+    const ext = (gv('np_ext_' + id) || '').trim();
     const endpoints = Object.assign({}, (Store.settings || {}).endpoints || {});
-    if (url) endpoints[svcName] = Object.assign({}, endpoints[svcName], { url });
+    if (url) endpoints[svcName] = Object.assign({}, endpoints[svcName], { url, externalUrl: ext });
     else delete endpoints[svcName];
     const patch = { endpoints };
     if (hasKey) {
@@ -6274,7 +6276,7 @@ window.openProviderCfg = function (id) {
     const title = `${iconImg(p ? p.title : id, 22)}${esc(p ? p.title : id)}`;
     const sub = p ? `${p.kind === 'catalog' ? 'integration' : 'native provider'} · ${esc(typeof p.source === 'string' ? p.source : '')}` : '';
     const body = cat ? igConfigForm(cat) : nativeCfgForm(id);
-    openDrawer(title, sub, `<div class="drawer-cfg">${body}</div>`, p && p.links ? openButtons(p.links.open, p.links.external, p.title) : '');
+    openDrawer(title, sub, `<div class="drawer-cfg">${body}</div>`, p ? openButtons(p.links && p.links.open, providerExternal(p), p.title) : '');
 };
 window.testProvider = async function (id) {
     const el = document.getElementById('ptest_' + cssId(id));
@@ -6329,7 +6331,10 @@ function openLinks(internal, external) {
     return one ? lnk(one, 'open ↗', 'ig-open') : '';
 }
 /* External URL configured for a service/app key (from its integration endpoint). */
-function externalFor(key) { const ep = (Store.settings && Store.settings.endpoints) || {}; return (ep[key] && ep[key].externalUrl) || ''; }
+function externalFor(key) { const s = Store.settings || {}, ep = s.endpoints || {}; if (ep[key] && ep[key].externalUrl) return ep[key].externalUrl; const cs = Array.isArray(s.customServices) ? s.customServices : []; const svc = cs.find(c => c.name === key); return (svc && svc.externalUrl) || ''; }
+// Native probes store their external under the probe's service name, not the provider id.
+const NATIVE_SVC = { truenas: 'TrueNAS Web UI', tracearr: 'Tracearr', nodeexp: 'Node Exporter', nodefs: 'Node Exporter', cadvisor: 'cAdvisor', prometheus: 'Prometheus', loki: 'Loki' };
+function providerExternal(p) { if (!p) return ''; if (p.links && p.links.external) return p.links.external; return externalFor(p.id) || externalFor(p.title) || externalFor(NATIVE_SVC[p.id] || '') || ''; }
 /* Open control — when a service has BOTH a local address and an external/public URL,
    offer the choice (Internal / External) instead of silently defaulting to one. */
 function openChooser(internal, external) {
@@ -6366,7 +6371,7 @@ function providerCard(p) {
     const rt = p.realtime && p.realtime.channel ? `SSE · ${p.realtime.channel}` : `poll ${Math.round(((p.realtime || {}).interval || 20000) / 1000)}s`;
     return `<div class="pv-card" data-state="${health === 'ok' ? '' : health}">
         <div class="pv-head">${iconImg(p.title, 28)}<div class="pv-id"><span class="pv-name">${esc(p.title)}</span><span class="pv-meta"><span class="dot ${health}"></span>${healthTxt}${sync ? ' · synced ' + sync : ''}</span></div><span class="pv-kind">${p.kind === 'catalog' ? 'integration' : 'native'}</span></div>
-        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}${addrChip(addr)}${openChooser(addr, p.links && p.links.external)}</div>
+        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}${addrChip(addr)}${openChooser(addr, providerExternal(p))}</div>
         ${p.errorState ? `<div class="pv-err">${esc(p.errorState.message)}</div>` : ''}
         <div class="pv-acts">
             <button class="tbtn" onclick="openProviderCfg('${esc(p.id)}')">Configure</button>
@@ -6428,7 +6433,8 @@ function settingsProviders() {
     return `${discBar}<div class="pv-grid">${provs.map(providerCard).join('')}
         <button class="pv-card pv-add" onclick="toggleSetCatalog()"><span class="pv-add-plus">+</span><span class="pv-name">Add provider</span><span class="pv-meta">${(Store.integrations || []).length - enabledIntegrations().length} available in the catalog</span></button>
     </div>
-    ${_setCatalogOpen ? `<div style="margin-top:14px">${igCatalogCard()}</div>` : ''}`;
+    ${_setCatalogOpen ? `<div style="margin-top:14px">${igCatalogCard()}</div>` : ''}
+    <div style="margin-top:18px">${customTilesCard()}</div>`;
 }
 /* — section renderers — */
 function settingsGeneral() {
@@ -6466,9 +6472,6 @@ function settingsAppearance() {
     </div>
     <div class="card" style="margin-top:14px"><div class="card-title">Preview <span class="sub">live — reflects your choices instantly</span></div>
         <div class="ap-preview"><section class="lane" style="margin:0"><div class="lane-head"><span class="eyebrow">Sample lane</span><span class="lane-meta"><span class="dot live"></span>live</span></div><hr class="hair"><div class="lane-body"><div class="insp-row"><span class="insp-k"><span class="dot ok"></span>A healthy service</span><span class="insp-v">12ms</span></div><div class="insp-row"><span class="insp-k"><span class="dot warn"></span>Something warming</span><span class="insp-v">82%</span></div></div></section></div></div>`;
-}
-function settingsTiles() {
-    return `<div class="set-desc" style="margin:2px 4px 14px">Quick-links, embeds and live API tiles for your dashboard — the escape hatch for anything not in the provider catalog.</div>${customTilesCard()}`;
 }
 function settingsSecurity() {
     const meta = Store.meta;
@@ -6646,8 +6649,7 @@ window.copyDiagnostics = async function () {
 const SET_HEADS = {
     general: ['General', 'Make Command Center yours — identity and behavior.'],
     appearance: ['Appearance', 'Accent, font, text size, density and motion — previewed live, saved on this device.'],
-    tiles: ['Tiles', 'Bookmarks, embeds and live-API tiles for your dashboard — the escape hatch for anything not in the provider catalog.'],
-    providers: ['Providers', 'Everything Command Center talks to. Configure, test and open each one from its card.'],
+    providers: ['Providers', 'Everything Command Center talks to — plus your own custom tiles. Configure, test and open each from its card.'],
     fleet: ['Fleet & probes', 'The services on your watchlist — these feed the health dots on every page.'],
     security: ['Security', 'What this server does with your secrets, and what it doesn\'t yet enforce — stated honestly.'],
     automation: ['Automation', 'How data moves: realtime streams first, polling as the fallback.'],
@@ -6662,7 +6664,7 @@ function setSectionBody(id) {
         const custom = Array.isArray(s.customServices) ? s.customServices : [];
         return servicesLedger(new Set(custom.map(c => c.name)), Array.isArray(s.hiddenServices) ? s.hiddenServices : []);
     }
-    return ({ general: settingsGeneral, appearance: settingsAppearance, tiles: settingsTiles, providers: settingsProviders, security: settingsSecurity, automation: settingsAutomation, data: settingsData, about: settingsAbout }[id] || settingsProviders)();
+    return ({ general: settingsGeneral, appearance: settingsAppearance, providers: settingsProviders, security: settingsSecurity, automation: settingsAutomation, data: settingsData, about: settingsAbout }[id] || settingsProviders)();
 }
 function setSearchHits() {
     const q = _setQ.trim().toLowerCase();
@@ -6682,7 +6684,7 @@ function mobileSettings() {
     const q = _setQ.trim().toLowerCase();
     const hits = setSearchHits();
     const hitRows = q ? `<div class="mset-group" style="margin-top:10px">${hits.slice(0, 8).map(h => `<button class="mset-row" onclick="onSetSearch('');setSettingsDest('${h[0]}')"><span class="mset-txt"><b>${esc(h[1])}</b><i>${esc(SET_SECTIONS.find(x => x.id === h[0]).label)}</i></span><span class="mset-chev">›</span></button>`).join('') || '<div class="lbl" style="padding:12px">No settings match.</div>'}</div>` : '';
-    const groups = [['Personalize', ['general', 'appearance', 'tiles']], ['Connections', ['providers', 'fleet']], ['System', ['security', 'automation', 'data', 'about']]];
+    const groups = [['Personalize', ['general', 'appearance']], ['Connections', ['providers', 'fleet']], ['System', ['security', 'automation', 'data', 'about']]];
     const row = sec => `<button class="mset-row" onclick="setSettingsDest('${sec.id}')"><span class="mset-ico">${navSvg(sec.ico)}</span><span class="mset-txt"><b>${esc(sec.label)}</b><i>${esc(sec.sub)}</i></span><span class="mset-chev">›</span></button>`;
     return `<div class="mset">
         <input class="set-input" id="setQ" aria-label="Search settings" placeholder="Search settings…" value="${esc(_setQ)}" oninput="onSetSearch(this.value)" autocomplete="off">
@@ -6737,7 +6739,7 @@ window.addService = async function () {
     const name = gv('svcName'), host = gv('svcHost'), port = gv('svcPort');
     if (!name || !host || !port) { toast('Name, host and port are required'); return; }
     const custom = (Array.isArray(Store.settings.customServices) ? Store.settings.customServices : []).slice();
-    custom.push({ name, host, port: Number(port), type: gv('svcType') || 'Custom', url: gv('svcUrl') });
+    custom.push({ name, host, port: Number(port), type: gv('svcType') || 'Custom', url: gv('svcUrl'), externalUrl: (gv('svcExt') || '').trim() });
     if (await saveSettings({ customServices: custom }, 'Adding service…')) { await refreshStatus(); render(); toast(name + ' added ✓'); }
 };
 window.removeService = async function (name) {

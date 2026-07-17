@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.6] — 2026-07-17
+
+### Added
+- **Every service can carry an external URL, not just catalog integrations.** The External URL field
+  is now on the native-provider forms (TrueNAS, Tracearr, Node Exporter, cAdvisor, Prometheus, Loki)
+  and the Fleet & probes "Add service" form too — so any service you configure can have a public /
+  reverse-proxy address, and the Internal / External open choice works for all of them.
+
+### Changed
+- **Custom tiles moved into Providers; the separate Tiles section is gone.** Bookmarks, embeds and
+  custom-API tiles now live at the bottom of Settings → Providers alongside the rest of your dashboard
+  content, instead of a redundant standalone section.
+
 ## [2.9.5] — 2026-07-17
 
 ### Changed
