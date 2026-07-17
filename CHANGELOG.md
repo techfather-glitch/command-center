@@ -4,6 +4,20 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.11] — 2026-07-17
+
+### Added
+- **The tile-enrichment pass, finished across the whole catalog.** Every remaining integration that had
+  more to show now shows it — almost all of it pulled from data those services *already return*, so tiles
+  get richer with no heavier polling. Hide anything you don't want with the per-tile field toggles (2.9.9).
+  - **DNS / proxy** — AdGuard: avg query latency · Pi-hole: unique clients + cached · Traefik: middleware count.
+  - **Monitoring** — Prometheus: down targets + scrape pools · Uptime Kuma / Gatus / Healthchecks: an explicit "Up" count · Alertmanager: warning count · Glances: 5-min load + core count.
+  - **Media** — Tautulli: direct-play count · Immich: user count · Audiobookshelf: book/podcast split + a library list · Sonarr / Radarr / Lidarr: "Cutoff unmet" (upgrades still wanted) · Prowlarr: total grabs + queries.
+  - **Storage / infra** — Synology: RAM + firmware version · Proxmox Backup: per-datastore usage list · CrowdSec: unique-IP count · Gotify: high-priority count · Paperless: correspondents · Mealie: categories.
+  - **Feeds** — Weather: feels-like, humidity, and wind alongside the daily high/low.
+- The handful that add a field via a new call (the *arr "Cutoff unmet", Prowlarr stats, Weather conditions)
+  use a single **optional** request, so a service that lacks the endpoint degrades quietly rather than erroring.
+
 ## [2.9.10] — 2026-07-17
 
 ### Added
