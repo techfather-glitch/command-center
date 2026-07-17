@@ -4,6 +4,35 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] — 2026-07-17
+
+### Added
+- **qui (autobrr) provider.** Add the qui qBittorrent web UI as a first-class integration
+  (Settings → Integrations → qui): point it at your qui URL (default port `7476`) with an
+  **X-API-Key** and its tile shows how many qBittorrent instances are wired up, how many are
+  currently connected, and a badge when a qui update is available. Read-only — it reports
+  state, it doesn't drive qui.
+
+### Fixed
+- **The integration search box could only find already-visible services.** The catalog
+  collapses less-common integrations behind **Browse all**; typing in the search box left
+  those hidden, so most of the catalog was effectively unsearchable. Search now reveals
+  matches from the collapsed set too.
+- **"Browse all" (and an active search) collapsed themselves after a few seconds.** A live
+  status update repaints the page, and the expanded/filtered catalog only lived in the DOM,
+  so every repaint silently reset it. Both states now persist across repaints.
+- **Clearer error when a provider hostname won't resolve.** Pointing a provider at a bare
+  container name (e.g. `http://seer:5055`) fails if Command Center isn't on that container's
+  Docker network — but the old message just said "DNS lookup failed". It now recognises a
+  short/container-style name and explains the fix: share a Docker network (`docker network
+  connect`) or use the service's LAN IP.
+- **An unconfigured service no longer shows a false error.** A native source that isn't set
+  up — e.g. TrueNAS with no address or API key — reports `configured: false`, but it was
+  still rendered as a degraded "auth error" on the Storage view, in the provider strips and
+  in Settings. Not-configured is now treated as a calm setup prompt everywhere; only a
+  *configured* service that actually fails shows an error, and it now names the real cause
+  instead of a hardcoded label.
+
 ## [2.7.0] — 2026-07-08
 
 ### Added

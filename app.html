@@ -703,6 +703,9 @@
     .ig-discover-dash { margin-top: 0; }
     /* Settings: collapse the long integration catalog until "Browse all" */
     .ig-cat-grid:not(.show-all) .ig-cat-extra { display: none; }
+    /* …but an active search must be able to reveal a match from the collapsed set.
+       Declared after the rule above so it wins on equal specificity. */
+    .ig-cat-grid.filtering .ig-cat-extra { display: block; }
     .ig-browse-all { width: 100%; justify-content: center; }
 
     /* native (Grafana-free) metrics overview */
@@ -2368,7 +2371,7 @@ const Providers = (() => {
         const u = Store.unifi;
         if (u !== undefined) out.push(P({ id: 'unifi', title: 'UniFi', icon: 'unifi', category: 'network', concepts: ['networking'], role: 'topology', setupState: u && u.configured === false ? 'unconfigured' : 'connected', healthState: !u ? 'unknown' : u.configured === false ? 'unknown' : u.stale ? 'degraded' : (u.error || u.ok === false) ? 'offline' : 'ok', errorState: u && (u.error || u.staleError) ? { message: errText(u.staleError || u.error) } : null, stale: !!(u && u.stale), data: u, source: 'UniFi controller' }));
         const tn = Store.truenas;
-        if (tn !== undefined) out.push(P({ id: 'truenas', title: 'TrueNAS', icon: 'truenas', category: 'storage', concepts: ['storage'], role: 'capacity', setupState: tn && tn.configured === false ? 'unconfigured' : 'connected', healthState: !tn ? 'unknown' : tn.error ? 'degraded' : 'ok', errorState: tn && tn.error ? { message: 'auth error' } : null, data: tn, source: 'TrueNAS API' }));
+        if (tn !== undefined) out.push(P({ id: 'truenas', title: 'TrueNAS', icon: 'truenas', category: 'storage', concepts: ['storage'], role: 'capacity', setupState: tn && tn.configured === false ? 'unconfigured' : 'connected', healthState: !tn ? 'unknown' : tn.configured === false ? 'unknown' : tn.error ? 'degraded' : 'ok', errorState: tn && tn.configured !== false && tn.error ? { message: errText(tn.error) } : null, data: tn, source: 'TrueNAS API' }));
         if (Store.host && Store.host.filesystems && Store.host.filesystems.length) out.push(P({ id: 'nodefs', title: 'Linux filesystems', icon: '', category: 'storage', concepts: ['storage'], role: 'capacity', healthState: 'ok', data: Store.host.filesystems, source: 'via Node Exporter' }));
         const ctrs = Store.containers && Store.containers.list && Store.containers.list.length;
         if (dockerControl()) {
@@ -2410,6 +2413,13 @@ const Providers = (() => {
                 healthState: svcOnline(s) ? 'ok' : 'offline', data: s, links: { open: s.url || '' }, source: 'port probe'
             }));
         });
+        // Invariant: a source that reports `configured: false` is simply NOT set up —
+        // that's a setup prompt, never an error or a degraded reading, whatever notice/
+        // error text the probe attached. Enforced once here so every consumer (provider
+        // strips, the health verdict, settings intel) treats an unconfigured service the
+        // same calm way. A real failure arrives with configured:true (or no flag) and is
+        // left untouched.
+        out.forEach(p => { if (p.data && p.data.configured === false) { p.setupState = 'unconfigured'; p.healthState = 'unknown'; p.errorState = null; } });
         return out;
     }
     return {
@@ -3038,7 +3048,7 @@ const ICON_RULES = [
     [/plex/, 'plex'], [/jellyfin/, 'jellyfin'], [/emby/, 'emby'],
     [/sonarr/, 'sonarr'], [/radarr/, 'radarr'], [/lidarr/, 'lidarr'], [/readarr/, 'readarr'],
     [/prowlarr/, 'prowlarr'], [/jackett/, 'jackett'], [/bazarr/, 'bazarr'], [/recyclarr/, 'recyclarr'],
-    [/profilarr/, 'prowlarr'], [/sab(nzbd)?/, 'sabnzbd'], [/qbit|qbt|torrent/, 'qbittorrent'],
+    [/profilarr/, 'prowlarr'], [/sab(nzbd)?/, 'sabnzbd'], [/\bqui\b/, 'qui'], [/qbit|qbt|torrent/, 'qbittorrent'],
     [/slskd|soulseek/, 'slskd'], [/home.?assist|hass/, 'home-assistant'], [/truenas|\bnas\b/, 'truenas-scale'],
     [/portainer/, 'portainer'], [/dockge/, 'dockge'], [/dozzle/, 'dozzle'], [/dockhand/, 'docker'],
     [/podman/, 'podman'], [/kubernetes|k8s|k3s/, 'kubernetes'], [/incus|\blxd\b/, 'incus'],
@@ -5322,7 +5332,7 @@ PAGES.storage = function () {
         ? t.pools.map(p => ({ name: p.name, size: p.size, used: p.used, free: p.free != null ? p.free : (p.avail != null ? p.avail : (p.size != null && p.used != null ? Math.max(0, p.size - p.used) : null)), pct: Number(p.usedPct != null ? p.usedPct : (p.used && p.size ? p.used / p.size * 100 : 0)), health: p.health || p.status }))
         : Object.values(poolMap);
     pools.sort((a, b) => (b.size || 0) - (a.size || 0));
-    if (!pools.length && !driveTemps.length) return `<section class="lane"><div class="blankslate"><svg class="bs-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="6" rx="1.5"/><rect x="3" y="13" width="18" height="6" rx="1.5"/><path d="M7 8h.01M7 16h.01"/></svg><div class="bs-title">No storage detected yet</div><div class="bs-sub">Connect a host (Node Exporter) or TrueNAS in <a href="#/settings">Settings</a>.${t && t.error ? '<br>TrueNAS pool API: ' + esc(errText(t.error)) : ''}</div></div></section>`;
+    if (!pools.length && !driveTemps.length) return `<section class="lane"><div class="blankslate"><svg class="bs-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="6" rx="1.5"/><rect x="3" y="13" width="18" height="6" rx="1.5"/><path d="M7 8h.01M7 16h.01"/></svg><div class="bs-title">No storage detected yet</div><div class="bs-sub">Connect a host (Node Exporter) or TrueNAS in <a href="#/settings">Settings</a>.${t && t.error && t.configured !== false ? '<br>TrueNAS pool API: ' + esc(errText(t.error)) : ''}</div></div></section>`;
     const totalCap = pools.reduce((a, p) => a + (p.size || 0), 0), totalUsed = pools.reduce((a, p) => a + (p.used || 0), 0), totalFree = totalCap - totalUsed;
     const usedPct = totalCap ? Math.round(totalUsed / totalCap * 100) : 0;
     const worst = pools.slice().sort((a, b) => (b.pct || 0) - (a.pct || 0))[0];
@@ -5340,7 +5350,7 @@ PAGES.storage = function () {
             </div>
         </header>
         ${pools.length ? `<div class="instrument spine-fleetbar"><div class="fleetbar-track">${seams}</div><div class="fleetbar-scale"><span>0</span><span class="redline-lbl">80% redline</span><span>full</span></div></div>` : ''}
-        ${!cfgOK ? `<div class="integrity-note">Capacity is live from the host. Pool health, scrub &amp; snapshot status need the TrueNAS API${t && t.error ? ' — “' + esc(errText(t.error)) + '”' : ''} · <a href="#/settings">open Settings</a>.</div>` : ''}
+        ${!cfgOK ? `<div class="integrity-note">Capacity is live from the host. Pool health, scrub &amp; snapshot status need the TrueNAS API${t && t.error && t.configured !== false ? ' — “' + esc(errText(t.error)) + '”' : ''} · <a href="#/settings">open Settings</a>.</div>` : ''}
         ${pools.length ? `<div class="pool-rail">${pools.map(p => poolLane(p, t, fsAll)).join('')}</div>` : ''}
         ${driveTemps.length ? `<section class="lane"><div class="lane-head"><span class="eyebrow">Drive temperatures</span><span class="lane-meta">${driveTemps.length} drive${driveTemps.length > 1 ? 's' : ''}</span></div><hr class="hair"><div class="lane-body"><div class="thermal-matrix">${driveTemps.map(thermCell).join('')}</div></div></section>` : ''}
     </div>`;
@@ -5779,6 +5789,10 @@ window.grafanaAddPanel = async function () {
 
 /* ---- Integrations catalog (Settings) ---- */
 let igExpanded = '';
+// "Browse all" expansion + the search query live in state, not just the DOM, so an
+// SSE-driven render() (which rebuilds #view) can't silently collapse or unfilter the
+// catalog underneath the user.
+let igShowAll = false, igSearchQ = '';
 let igDiscovered = {};   // id -> suggested URL inferred from existing services/containers
 function discoverIntegrations() {
     const cat = Store.integrations || []; if (!cat.length) return [];
@@ -5823,7 +5837,9 @@ function igConfigForm(d) {
 }
 function igCatalogRow(d, extra) {
     const open = igExpanded === d.id;
-    return `<div class="ig-cat ${d.enabled ? 'on' : ''} ${open ? 'open' : ''} ${extra ? 'ig-cat-extra' : ''}" data-kw="${esc((d.title + ' ' + d.category).toLowerCase())}">
+    const kw = (d.title + ' ' + d.category).toLowerCase();
+    const hidden = igSearchQ && !kw.includes(igSearchQ);   // keep re-renders in sync with the live filter
+    return `<div class="ig-cat ${d.enabled ? 'on' : ''} ${open ? 'open' : ''} ${extra ? 'ig-cat-extra' : ''}" data-kw="${esc(kw)}"${hidden ? ' style="display:none"' : ''}>
         <div class="ig-cat-h" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}" onclick="igToggle('${d.id}')">${iconImg(d.title, 28)}<div class="ig-cat-info"><div class="ig-cat-t">${esc(d.title)}</div><div class="ig-cat-c">${esc(d.category)}${d.enabled ? ' · enabled' : ''}</div></div><span class="ig-cat-badge ${d.enabled ? 'on' : ''}">${d.enabled ? 'On' : 'Add'}</span></div>
         ${open ? `<div class="ig-cat-cfg">${igConfigForm(d)}</div>` : ''}
     </div>`;
@@ -5845,14 +5861,14 @@ function igCatalogCard() {
     return `<div class="card" style="margin-bottom:18px"><div class="card-title">Integrations <span class="sub">${cats.filter(c => c.enabled).length} enabled · ${cats.length} available</span></div>
         <div class="set-desc" style="margin-bottom:10px">Connect any service — enter its URL + key, <b>Test</b>, then <b>Enable</b> to add a live tile to your dashboard.</div>
         ${disc.length ? `<div class="ig-discover"><span class="ig-disc-ico">✨</span><div class="ig-disc-body"><b>Found ${disc.length} in your setup</b> — the URL is pre-filled; just add a key and Enable: ${disc.slice(0, 14).map(d => `<button class="ig-disc-chip" onclick="igToggle('${d.id}')">${esc(d.title)}</button>`).join(' ')}</div></div>` : ''}
-        <input class="set-input" id="igSearch" aria-label="Search integrations" placeholder="Search ${cats.length} integrations…" oninput="igFilterCatalog(this.value)" style="margin-bottom:12px" autocomplete="off">
-        <div class="ig-cat-grid" id="igCatGrid">${sorted.map(d => igCatalogRow(d, !isPrimary(d))).join('')}</div>
-        ${extra ? `<button class="tbtn ig-browse-all" style="margin-top:12px" onclick="igToggleAll(this)">Browse all ${cats.length} integrations →</button>` : ''}</div>`;
+        <input class="set-input" id="igSearch" aria-label="Search integrations" placeholder="Search ${cats.length} integrations…" value="${esc(igSearchQ)}" oninput="igFilterCatalog(this.value)" style="margin-bottom:12px" autocomplete="off">
+        <div class="ig-cat-grid${igShowAll ? ' show-all' : ''}${igSearchQ ? ' filtering' : ''}" id="igCatGrid">${sorted.map(d => igCatalogRow(d, !isPrimary(d))).join('')}</div>
+        ${extra ? `<button class="tbtn ig-browse-all" style="margin-top:12px" onclick="igToggleAll(this)">${igShowAll ? 'Show fewer' : ('Browse all ' + cats.length + ' integrations →')}</button>` : ''}</div>`;
 }
 window.igToggle = function (id) { igExpanded = igExpanded === id ? '' : id; render(); };
 window.igGoSetup = function (id) { igExpanded = id; _setDest = 'providers'; _setCatalogOpen = true; if (route === 'settings') render(); else location.hash = '#/settings'; };
-window.igToggleAll = function (btn) { const g = document.getElementById('igCatGrid'); if (!g) return; const on = g.classList.toggle('show-all'); if (btn) btn.textContent = on ? 'Show fewer' : ('Browse all ' + (Store.integrations || []).length + ' integrations →'); };
-window.igFilterCatalog = function (q) { q = (q || '').trim().toLowerCase(); document.querySelectorAll('#igCatGrid .ig-cat').forEach(el => { if (!q) el.style.removeProperty('display'); else el.style.display = (el.dataset.kw || '').includes(q) ? '' : 'none'; }); };
+window.igToggleAll = function (btn) { igShowAll = !igShowAll; const g = document.getElementById('igCatGrid'); if (g) g.classList.toggle('show-all', igShowAll); if (btn) btn.textContent = igShowAll ? 'Show fewer' : ('Browse all ' + (Store.integrations || []).length + ' integrations →'); };
+window.igFilterCatalog = function (q) { igSearchQ = (q || '').trim().toLowerCase(); const g = document.getElementById('igCatGrid'); if (g) g.classList.toggle('filtering', !!igSearchQ); document.querySelectorAll('#igCatGrid .ig-cat').forEach(el => { if (!igSearchQ) el.style.removeProperty('display'); else el.style.display = (el.dataset.kw || '').includes(igSearchQ) ? '' : 'none'; }); };
 async function igSave(id, enable) {
     const d = (Store.integrations || []).find(x => x.id === id); if (!d) return false;
     const s = Store.settings || {};
