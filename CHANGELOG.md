@@ -4,6 +4,17 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.9] — 2026-07-17
+
+### Added
+- **Pick which fields show on each service tile.** Every integration's config (Settings → Providers →
+  Configure) now lists its stats as chips — click to **add or remove** any field from that service's
+  dashboard tile. Saved per service.
+- **Richer stats on the sparse tiles.** Plex now shows **Transcodes** and **Direct** (not just Streams),
+  SABnzbd adds **ETA** and **Status**, and Overseerr / Jellyseerr adds **Processing**, **Available** and
+  **Declined** — all derived from data those services already return. Trim any you don't want with the new
+  per-tile field toggles.
+
 ## [2.9.8] — 2026-07-17
 
 ### Fixed

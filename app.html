@@ -714,6 +714,13 @@
     .seg-btn { padding: 7px 13px; border-radius: 9px; border: 1px solid var(--border); background: var(--card-2); color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color .14s, color .14s; }
     .seg-btn:hover { color: var(--text); }
     .seg-btn.active { color: var(--text); border-color: color-mix(in srgb, var(--live) 55%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--live) 35%, transparent); }
+    /* per-service tile field toggles */
+    .ig-fieldcfg { margin-top: 12px; }
+    .ig-fieldcfg-lbl { font-size: 11.5px; color: var(--faint); margin-bottom: 7px; }
+    .ig-fieldcfg-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .fieldchip { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-2); color: var(--faint); font-size: 12px; font-weight: 600; cursor: pointer; transition: border-color .12s, color .12s; }
+    .fieldchip.on { color: var(--text); border-color: color-mix(in srgb, var(--live) 45%, var(--border)); background: color-mix(in srgb, var(--live) 8%, var(--card-2)); }
+    .fieldchip:hover { color: var(--text); }
     /* first-run welcome + adaptive dashboard grid */
     
     .welcome { max-width: 580px; width: 100%; text-align: center; padding: 40px 36px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
@@ -3497,12 +3504,18 @@ function fmtWidgetField(f) {
     if (f.kind === 'pct') return (Number(v) || 0) + '%';
     return esc(String(v));
 }
+/* Per-service tile fields — the user can hide any field from a tile via its config;
+   the id is a slug of the label so it survives value changes. */
+function fieldId(f) { return String((f && f.label) || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
+function hiddenFields(id) { const ig = (Store.settings && Store.settings.integrations) || {}; return (id && ig[id] && Array.isArray(ig[id].hiddenFields)) ? ig[id].hiddenFields : []; }
 function renderWidget(def, data) {
     if (!data) return '<div class="ig-load"><span class="spinner"></span></div>';
     if (data.ok === false) return `<div class="ig-err">⚠ ${esc(data.error || 'unavailable')}</div>`;
     const p = [];
+    const hid = hiddenFields(def && def.id);
     if (data.gauge) { const g = data.gauge; const pct = g.max ? Math.max(0, Math.min(100, g.value / g.max * 100)) : g.value; const col = { good: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--crit)' }[g.state]; p.push(`<div class="ig-gauge">${gauge(pct, g.label, g.value + (g.unit || ''), { sm: true, color: col })}</div>`); }
-    if (Array.isArray(data.fields) && data.fields.length) p.push(`<div class="mini-stats">${data.fields.map(f => { const L = (f.value == null ? '' : String(f.value)).length; const fs = L > 8 ? 12 : L > 5 ? 14 : 18; return `<div class="mini"><div class="mlabel">${esc(f.label)}</div><div class="mval ${f.state || ''}" style="font-size:${fs}px">${fmtWidgetField(f)}</div></div>`; }).join('')}</div>`);
+    const flds = Array.isArray(data.fields) ? data.fields.filter(f => !hid.includes(fieldId(f))) : [];
+    if (flds.length) p.push(`<div class="mini-stats">${flds.map(f => { const L = (f.value == null ? '' : String(f.value)).length; const fs = L > 8 ? 12 : L > 5 ? 14 : 18; return `<div class="mini"><div class="mlabel">${esc(f.label)}</div><div class="mval ${f.state || ''}" style="font-size:${fs}px">${fmtWidgetField(f)}</div></div>`; }).join('')}</div>`);
     if (Array.isArray(data.bars) && data.bars.length) p.push(`<div style="margin-top:10px">${data.bars.map(b => { const pct = b.max ? Math.round(b.value / b.max * 100) : Math.round(b.value); return `<div class="ig-bar"><div class="ig-bar-h"><span>${esc(b.label)}</span><span>${pct}${b.unit || '%'}</span></div><div class="meter-track" style="height:8px"><div class="meter-bar ${b.state || usageClass(pct)}" style="width:${Math.min(100, pct)}%"></div></div></div>`; }).join('')}</div>`);
     if (Array.isArray(data.series) && data.series.length > 1) p.push(`<div class="spark-wrap">${sparkline(data.series, { w: 280, h: 40, grad: ['#2dd4bf', '#a78bfa'] })}</div>`);
     if (Array.isArray(data.items) && data.items.length) p.push(`<div class="ig-items">${data.items.slice(0, 6).map(it => `<div class="ig-item"><span class="dot ${it.state || 'idle'}"></span><span class="ig-item-l">${esc(it.label)}</span>${it.sub ? `<span class="ig-item-s">${esc(it.sub)}</span>` : ''}${it.value != null ? `<span class="ig-item-v sig-${it.state === 'good' ? 'good' : it.state === 'bad' ? 'low' : 'ok'}">${esc(String(it.value))}</span>` : ''}</div>`).join('')}</div>`);
@@ -5941,6 +5954,7 @@ function igConfigForm(d) {
         ${field('External URL', 'igx_' + d.id, d.externalUrl || '', 'https://sonarr.example.com — reach it anywhere (optional)')}
         ${af.map(f => f.kind === 'secret' ? credField(f.label, 'igf_' + d.id + '_' + f.name, igFieldSet(d.id, f.name), f.label) : field(f.label, 'igf_' + d.id + '_' + f.name, igTextVal(d.id, f.name), f.label)).join('')}
         ${cf.map(f => field(f.label, 'igf_' + d.id + '_' + f.name, igCfgVal(d.id, f.name), f.label)).join('')}
+        ${(() => { const w = Store.widgets[d.id]; const flds = (w && Array.isArray(w.fields)) ? w.fields : []; if (!flds.length) return ''; const hid = hiddenFields(d.id); return `<div class="ig-fieldcfg"><div class="ig-fieldcfg-lbl">Fields shown on the tile — click to add or remove</div><div class="ig-fieldcfg-row">${flds.map(f => { const fid = fieldId(f); const on = !hid.includes(fid); return `<button type="button" class="fieldchip ${on ? 'on' : ''}" onclick="toggleField('${d.id}','${fid}')" title="${on ? 'Shown — click to hide' : 'Hidden — click to show'}">${on ? '✓ ' : '＋ '}${esc(f.label)}</button>`; }).join('')}</div></div>`; })()}
         <div class="ig-cat-act">
             <button class="tbtn" onclick="igTest('${d.id}')">Test</button>
             <button class="tbtn primary" onclick="igSaveEnable('${d.id}')">${d.enabled ? 'Save' : 'Enable'}</button>
@@ -6026,6 +6040,18 @@ window.igRemove = async function (id) {
     if (await saveSettings({ endpoints, apiKeys, integrations }, 'Removing instance…')) { await refreshIntegrations(); if (igExpanded === id) igExpanded = ''; if (Store.widgets) delete Store.widgets[id]; render(); toast('Instance removed'); }
 };
 window.igSaveEnable = async function (id) { if (await igSave(id, true)) { await refreshIntegrations(); await refreshWidget(id); render(); const ob = document.getElementById('onboard'); if (ob && !ob.hidden) renderOnboard(); const d = (Store.integrations || []).find(x => x.id === id); toast((d ? d.title : 'Integration') + ' enabled ✓'); } };
+/* Show/hide a single field on a service's dashboard tile (per-service, saved). */
+window.toggleField = async function (id, fid) {
+    const s = Store.settings || {};
+    const integrations = Object.assign({}, s.integrations);
+    const cur = Object.assign({}, integrations[id]);
+    const hid = Array.isArray(cur.hiddenFields) ? cur.hiddenFields.slice() : [];
+    const i = hid.indexOf(fid); if (i >= 0) hid.splice(i, 1); else hid.push(fid);
+    cur.hiddenFields = hid; integrations[id] = cur;
+    Store.settings = Object.assign({}, s, { integrations });
+    render();
+    await saveSettings({ integrations }, 'Tile fields saved');
+};
 window.igDisable = async function (id) { const s = Store.settings || {}; const integrations = Object.assign({}, s.integrations); integrations[id] = Object.assign({}, integrations[id], { enabled: false }); if (await saveSettings({ integrations }, 'Disabling…')) { await refreshIntegrations(); render(); toast('Disabled'); } };
 /* Run one declared provider write-action (RSS sync, pause queue, resume torrents…)
    through the server's authenticated action pipeline. The server holds the creds;
