@@ -187,6 +187,8 @@
     .svc-meta { font-size: 11.5px; color: var(--faint); }
     .svc-open { margin-left: auto; color: var(--accent); font-weight: 650; font-size: 13px; }
     .svc-open:hover { text-decoration: underline; }
+    .ig-open { color: var(--accent); font-weight: 650; font-size: 11px; margin-left: 6px; white-space: nowrap; }
+    .ig-open:hover { text-decoration: underline; }
 
     .action-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; border-top: 1px solid var(--border-soft); }
     .fix-btn { margin-left: auto; flex: 0 0 auto; background: color-mix(in srgb, var(--red) 18%, var(--card)); border: 1px solid color-mix(in srgb, var(--red) 45%, var(--border)); color: var(--red); border-radius: 8px; padding: 6px 13px; font-weight: 650; font-size: 12.5px; }
@@ -3499,7 +3501,7 @@ function igTile(def) {
     const data = Store.widgets[def.id];
     const st = !data ? '' : data.ok === false ? 'bad' : 'good';
     const ver = data && data.version ? `<span class="ig-ver" title="Reported version">v${esc(String(data.version).replace(/^v/i, ''))}</span>` : '';
-    return `<div class="card ig-card"><div class="ig-head">${iconImg(def.title, 24)}<span class="ig-title">${esc(def.title)}</span>${ver}<span class="dot ${st || 'idle'}"></span></div><div class="ig-body">${renderWidget(def, data)}</div></div>`;
+    return `<div class="card ig-card"><div class="ig-head">${iconImg(def.title, 24)}<span class="ig-title">${esc(def.title)}</span>${ver}${openLinks(def.url || def.defaultUrl, def.externalUrl)}<span class="dot ${st || 'idle'}" style="margin-left:auto"></span></div><div class="ig-body">${renderWidget(def, data)}</div></div>`;
 }
 function customTiles() { return (Store.settings && Array.isArray(Store.settings.customTiles)) ? Store.settings.customTiles : []; }
 function renderCustomTile(t) {
@@ -5603,7 +5605,7 @@ function appStacks() {
 function fmtCpuPct(v) { return v == null ? '—' : v >= 10 ? Math.round(v) + '%' : v >= 0.05 ? v.toFixed(1) + '%' : v > 0 ? '<0.1%' : '0%'; }
 function appCard(a) {
     const state = a.warns.length ? (a.running < a.total ? 'crit' : 'warn') : '';
-    const open = a.url ? `<button class="app-open" onclick="event.stopPropagation();window.open('${esc(a.url)}','_blank','noopener')" title="Open ${esc(a.title)}">Open ↗</button>` : '';
+    const open = openLinks(a.url, externalFor(a.key));
     return `<div class="app-card${state ? ' has-warn' : ''}"${state ? ` data-state="${state}"` : ''} tabindex="0" role="button" onclick="openAppDrawer('${esc(a.key)}')" onkeydown="if(event.key==='Enter')this.click()">
         <div class="app-card-head">${iconImg(a.title, 30)}<div class="app-id"><span class="app-name">${esc(a.title)}</span><span class="app-meta"><span class="dot ${a.running === a.total ? 'ok' : 'crit'}"></span>${a.running}/${a.total} container${a.total === 1 ? '' : 's'}${a.started ? ' · up ' + fmtUptime(Date.now() / 1000 - a.started) : ''}</span></div>${open}</div>
         <div class="app-stats">
@@ -6311,6 +6313,17 @@ function addrChip(addr) { return addr ? `<button class="pv-addr mono" onclick="c
    domain is upgraded to https:// (which also neutralises any non-http scheme). */
 function extChip(url) { if (!url) return ''; let u = String(url).trim(); if (!/^https?:\/\//i.test(u)) u = 'https://' + u; return `<a class="pv-addr mono" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(u)} (external)">${esc(hostOf(u))} ↗</a>`; }
 function normOpen(u) { u = String(u || '').trim(); if (!u) return ''; if (!/^https?:\/\//i.test(u)) u = 'https://' + u; return u; }
+/* Compact open links for dashboard tiles + container app cards — Internal / External
+   when both exist, else a single Open. stopPropagation so a card's own click still works. */
+function openLinks(internal, external) {
+    const i = normOpen(internal), e = normOpen(external);
+    const lnk = (u, lbl, kind) => `<a class="ig-open" href="${esc(u)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open ${esc(u)}${kind ? ' (' + kind + ')' : ''}">${lbl}</a>`;
+    if (i && e) return lnk(i, 'int ↗', 'internal') + lnk(e, 'ext ↗', 'external');
+    const one = i || e;
+    return one ? lnk(one, 'open ↗') : '';
+}
+/* External URL configured for a service/app key (from its integration endpoint). */
+function externalFor(key) { const ep = (Store.settings && Store.settings.endpoints) || {}; return (ep[key] && ep[key].externalUrl) || ''; }
 /* Open control — when a service has BOTH a local address and an external/public URL,
    offer the choice (Internal / External) instead of silently defaulting to one. */
 function openChooser(internal, external) {

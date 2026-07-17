@@ -4,6 +4,14 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] — 2026-07-17
+
+### Added
+- **Internal / External open choice on Home tiles and the Containers page.** The internal-vs-external
+  choice added in 2.8.1 now also appears on the Home dashboard tiles and on the Applications /
+  Containers app cards — open a service by its local address or its public URL from wherever you're
+  looking, not just the provider card.
+
 ## [2.9.0] — 2026-07-17
 
 ### Added
