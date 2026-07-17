@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.4] — 2026-07-17
+
+### Fixed
+- **Widget gauge rings no longer show red when a high value is *good*.** The tile gauge coloured its
+  ring purely by percentage (a usage palette where ≥90% = red), so qui's "Connected 100%", Home
+  Assistant "Available 99%" and Kubernetes "Nodes Ready 100%" all rendered alarming red. Gauges now
+  colour by their own semantic state (green / amber / red); the usage palette stays only as the
+  fallback for gauges that don't report a state (CPU, memory, disk).
+
 ## [2.9.3] — 2026-07-17
 
 ### Fixed
