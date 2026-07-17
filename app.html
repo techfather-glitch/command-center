@@ -6223,7 +6223,7 @@ window.openProviderCfg = function (id) {
     const title = `${iconImg(p ? p.title : id, 22)}${esc(p ? p.title : id)}`;
     const sub = p ? `${p.kind === 'catalog' ? 'integration' : 'native provider'} · ${esc(typeof p.source === 'string' ? p.source : '')}` : '';
     const body = cat ? igConfigForm(cat) : nativeCfgForm(id);
-    openDrawer(title, sub, `<div class="drawer-cfg">${body}</div>`, p && p.links && p.links.open ? `<button class="det-btn" onclick="window.open('${esc(p.links.open)}','_blank','noopener')">Open ${esc(p.title)} ↗</button>` : '');
+    openDrawer(title, sub, `<div class="drawer-cfg">${body}</div>`, p && p.links ? openButtons(p.links.open, p.links.external, p.title) : '');
 };
 window.testProvider = async function (id) {
     const el = document.getElementById('ptest_' + cssId(id));
@@ -6266,6 +6266,21 @@ function addrChip(addr) { return addr ? `<button class="pv-addr mono" onclick="c
 /* External/public address chip — the reach-anywhere URL, opens in a new tab. A bare
    domain is upgraded to https:// (which also neutralises any non-http scheme). */
 function extChip(url) { if (!url) return ''; let u = String(url).trim(); if (!/^https?:\/\//i.test(u)) u = 'https://' + u; return `<a class="pv-addr mono" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(u)} (external)">${esc(hostOf(u))} ↗</a>`; }
+function normOpen(u) { u = String(u || '').trim(); if (!u) return ''; if (!/^https?:\/\//i.test(u)) u = 'https://' + u; return u; }
+/* Open control — when a service has BOTH a local address and an external/public URL,
+   offer the choice (Internal / External) instead of silently defaulting to one. */
+function openChooser(internal, external) {
+    const i = normOpen(internal), e = normOpen(external);
+    if (i && e) return `<a class="pv-addr mono" href="${esc(i)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(i)} (internal)">Internal ↗</a><a class="pv-addr mono" href="${esc(e)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(e)} (external)">External ↗</a>`;
+    const one = i || e;
+    return one ? `<a class="pv-addr mono" href="${esc(one)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(one)}">Open ↗</a>` : '';
+}
+function openButtons(internal, external, title) {
+    const i = normOpen(internal), e = normOpen(external);
+    if (i && e) return `<button class="det-btn" onclick="window.open('${esc(i)}','_blank','noopener')">Internal ↗</button><button class="det-btn" onclick="window.open('${esc(e)}','_blank','noopener')">External ↗</button>`;
+    const one = i || e;
+    return one ? `<button class="det-btn" onclick="window.open('${esc(one)}','_blank','noopener')">Open${title ? ' ' + esc(title) : ''} ↗</button>` : '';
+}
 /* Tailscale device browser — your tailnet at a glance, each device's 100.x IP one click to copy. */
 window.openTsDrawer = async function (id) {
     id = id || 'tailscale';
@@ -6288,7 +6303,7 @@ function providerCard(p) {
     const rt = p.realtime && p.realtime.channel ? `SSE · ${p.realtime.channel}` : `poll ${Math.round(((p.realtime || {}).interval || 20000) / 1000)}s`;
     return `<div class="pv-card" data-state="${health === 'ok' ? '' : health}">
         <div class="pv-head">${iconImg(p.title, 28)}<div class="pv-id"><span class="pv-name">${esc(p.title)}</span><span class="pv-meta"><span class="dot ${health}"></span>${healthTxt}${sync ? ' · synced ' + sync : ''}</span></div><span class="pv-kind">${p.kind === 'catalog' ? 'integration' : 'native'}</span></div>
-        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}${addrChip(addr)}${extChip(p.links && p.links.external)}</div>
+        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}${addrChip(addr)}${openChooser(addr, p.links && p.links.external)}</div>
         ${p.errorState ? `<div class="pv-err">${esc(p.errorState.message)}</div>` : ''}
         <div class="pv-acts">
             <button class="tbtn" onclick="openProviderCfg('${esc(p.id)}')">Configure</button>

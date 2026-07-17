@@ -27,6 +27,9 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   / MikroTik / Omada).
 - **Compact density is noticeably tighter.** It now pulls in card and lane padding and the big
   hero figures, so the difference from Comfortable is obvious.
+- **Open a service by internal *or* external address.** When a provider has both a local address
+  and an external/public URL, the provider card and its drawer now offer **Internal ↗** and
+  **External ↗** instead of defaulting to one — pick whichever reaches it from where you are.
 
 ## [2.8.0] — 2026-07-17
 
