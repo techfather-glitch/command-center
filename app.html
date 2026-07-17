@@ -1806,6 +1806,13 @@
     body[data-density="compact"] .serviceLane { min-height: 26px; }
     body[data-density="compact"] .app-card { padding: 9px 11px 9px; gap: 6px; }
     body[data-density="compact"] .view { padding-top: 10px; }
+    /* stronger compact — pull in cards, lanes and the big hero figures so it's clearly different */
+    body[data-density="compact"] .card { padding: 12px 13px; margin-bottom: 12px; }
+    body[data-density="compact"] .card-title { margin-bottom: 10px; }
+    body[data-density="compact"] .lane { margin-bottom: 12px; }
+    body[data-density="compact"] .stat-card .num { font-size: 40px; line-height: 1; }
+    body[data-density="compact"] .st-tile { min-height: 64px; }
+    body[data-density="compact"] .floor-row { min-height: 46px; }
     /* — reduced motion: kill pulses and slides (also honors the OS preference) — */
     body[data-motion="reduced"] *, body[data-motion="reduced"] *::before, body[data-motion="reduced"] *::after { animation: none !important; transition: none !important; }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
@@ -2448,6 +2455,7 @@ function _navPersist() { try { localStorage.setItem('cc-nav-active', JSON.string
 // Is a concept CONFIGURED? Derived from settings + the enabled-integration flags
 // (both known early), NOT from live probe data — so the answer is stable on first
 // paint and doesn't change as widgets finish loading.
+const NET_CONTROLLERS = new Set(['unifi', 'pfsense', 'opnsense', 'openwrt', 'mikrotik', 'omada']);
 function conceptConfigured(id) {
     const s = Store.settings || {};
     const ep = s.endpoints || {};
@@ -2455,9 +2463,11 @@ function conceptConfigured(id) {
     // A native provider counts as configured whether it was set up as an endpoint
     // (provider card) OR as a fleet service (customServices) OR imported.
     const has = (n) => !!(ep[n] && ep[n].url) || custom.some(c => c.name === n);
-    if ((Store.integrations || []).some(d => d.enabled && (ID_CONCEPT[d.id] || CAT_CONCEPT[d.category] || 'applications') === id)) return true;
+    if (id !== 'networking' && (Store.integrations || []).some(d => d.enabled && (ID_CONCEPT[d.id] || CAT_CONCEPT[d.category] || 'applications') === id)) return true;
     switch (id) {
-        case 'networking':    return !!(s.unifi && s.unifi.url) || has('UniFi');
+        // Networking = a real LAN controller only. A VPN (Tailscale) or DNS filter
+        // (AdGuard/Pi-hole) is network-category but shouldn't light up the nav alone.
+        case 'networking':    return !!(s.unifi && s.unifi.url) || has('UniFi') || (Store.integrations || []).some(d => d.enabled && NET_CONTROLLERS.has(String(d.baseType || d.id || '').split('#')[0]));
         case 'storage':       return has('TrueNAS Web UI');
         case 'compute':       return has('Node Exporter');
         case 'media':         return has('Tracearr') || has('Plex Media Server') || has('Emby') || has('Dropped Needle');
@@ -2471,6 +2481,7 @@ function conceptConfigured(id) {
 function conceptLive(id) {
     if (id === 'applications') return dockerControl() || !!(Store.containers && Store.containers.list && Store.containers.list.length) || svcAny(CONCEPT_TYPES.applications);
     if (id === 'logs') return dockerControl();
+    if (id === 'networking') return Providers.byConcept('networking').some(p => p.setupState === 'connected' && NET_CONTROLLERS.has(String(p.id || '').split('#')[0]));
     return Providers.byConcept(id).some(p => p.setupState === 'connected');   // no healthState gate — configured is enough for the nav
 }
 function conceptActive(id) {
@@ -2529,19 +2540,29 @@ const ICONS = {
 function navIconSvg(icon) { return icon && ICONS[icon] ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[icon] + '</svg>' : ''; }
 
 /* ---- Accent presets — emerald/teal/cyan ONLY (status colors stay fixed) ---- */
+// Accent palette — deliberately blue→purple hues that never collide with the status
+// ramp (green/amber/red stay reserved for state). The picked accent recolors --live.
 const THEMES = {
-    emerald: { name: 'Emerald', accent: '#34D399', accent2: '#6EE7B7' },
     teal:    { name: 'Teal',    accent: '#2DD4BF', accent2: '#5EEAD4' },
-    cyan:    { name: 'Cyan',    accent: '#22D3EE', accent2: '#67E8F9' }
+    cyan:    { name: 'Cyan',    accent: '#22D3EE', accent2: '#67E8F9' },
+    sky:     { name: 'Sky',     accent: '#38BDF8', accent2: '#7DD3FC' },
+    blue:    { name: 'Blue',    accent: '#60A5FA', accent2: '#93C5FD' },
+    indigo:  { name: 'Indigo',  accent: '#818CF8', accent2: '#A5B4FC' },
+    violet:  { name: 'Violet',  accent: '#A78BFA', accent2: '#C4B5FD' },
+    fuchsia: { name: 'Fuchsia', accent: '#E879F9', accent2: '#F0ABFC' }
 };
-function currentTheme() { try { return THEMES[localStorage.getItem('hl-accent')] ? localStorage.getItem('hl-accent') : 'emerald'; } catch (e) { return 'emerald'; } }
+function currentTheme() { try { return THEMES[localStorage.getItem('hl-accent')] ? localStorage.getItem('hl-accent') : 'teal'; } catch (e) { return 'teal'; } }
 function applyTheme(id) {
-    const t = THEMES[id] || THEMES.emerald;
-    document.documentElement.style.setProperty('--accent', t.accent);
-    document.documentElement.style.setProperty('--accent-2', t.accent2);
+    const t = THEMES[id] || THEMES.teal;
+    const d = document.documentElement.style;
+    // Only the live/active accent moves; status colours are untouched.
+    d.setProperty('--live', t.accent);
+    d.setProperty('--accent', t.accent);
+    d.setProperty('--accent-2', t.accent2);
+    d.setProperty('--live-wash', 'color-mix(in srgb, ' + t.accent + ' 9%, transparent)');
     try { localStorage.setItem('hl-accent', id); } catch (e) {}
 }
-window.setTheme = function (id) { applyTheme(id); renderTopbar(); };
+window.setTheme = function (id) { applyTheme(id); render(); };
 /* Per-device appearance prefs (saved in localStorage, like the theme):
    - font family overrides --font app-wide (self-hosted/system stacks only, no CDN),
    - text size zooms the content area (#view) — sizes are px, so a root font-size
@@ -2561,10 +2582,7 @@ window.setUiScale = function (id) { try { localStorage.setItem('cc-ui-scale', id
 window.setUiFont = function (id) { try { localStorage.setItem('cc-font', id); } catch (e) {} applyAppearance(); if (route === 'settings') render(); };
 window.setMediaEmphasis = function (id) { try { localStorage.setItem('cc-media-emphasis', id); } catch (e) {} if (route === 'settings') render(); };
 applyAppearance();
-/* GAUGE: accent is a single fixed teal (--live); the per-theme override is retired so
-   the accent never competes with the status-green. THEMES/setTheme kept but unused. */
-document.documentElement.style.removeProperty('--accent');
-document.documentElement.style.removeProperty('--accent-2');
+applyTheme(currentTheme());   // accent theming is live: apply the saved accent at boot
 
 let svcTab = 'services';   // 'services' | 'containers' — sub-tab of the combined page
 let route = (location.hash.replace('#/', '') || 'dashboard');
@@ -6053,7 +6071,8 @@ window.removeCustomTile = async function (i) {
 let _setDest = 'providers', _setQ = '';
 const SET_SECTIONS = [
     { id: 'general',    ico: 'gear',    label: 'General',        sub: 'Name & landing page' },
-    { id: 'appearance', ico: 'grid',    label: 'Appearance',     sub: 'Accent, density, motion' },
+    { id: 'appearance', ico: 'grid',    label: 'Appearance',     sub: 'Accent, font, density' },
+    { id: 'tiles',      ico: 'apps',    label: 'Tiles',          sub: 'Bookmarks & custom widgets' },
     { id: 'providers',  ico: 'layers',  label: 'Providers',      sub: 'Everything connected' },
     { id: 'fleet',      ico: 'server',  label: 'Fleet & probes', sub: 'Your service watchlist' },
     { id: 'security',   ico: 'bell',    label: 'Security',       sub: 'Score, secrets, audit' },
@@ -6064,7 +6083,7 @@ const SET_SECTIONS = [
 /* Searchable index over every setting — section + label + keywords. */
 const SET_INDEX = [
     ['general', 'Application name', 'title brand rename'], ['general', 'Landing page', 'home default start route'], ['general', 'Recently changed', 'history recent'], ['general', 'Run setup wizard', 'first-run onboarding re-run guided setup'],
-    ['appearance', 'Accent color', 'theme teal palette'], ['appearance', 'Density', 'compact comfortable spacing'], ['appearance', 'Reduced motion', 'animation accessibility a11y'], ['appearance', 'Custom tiles', 'bookmark iframe widget api tile'],
+    ['appearance', 'Accent color', 'theme palette colour'], ['appearance', 'Text size', 'font scale zoom bigger larger compact'], ['appearance', 'Font', 'typeface family typography'], ['appearance', 'Live Activity title', 'episode series stream media'], ['appearance', 'Density', 'compact comfortable spacing'], ['appearance', 'Reduced motion', 'animation accessibility a11y'], ['tiles', 'Custom tiles', 'bookmark iframe widget api tile'],
     ['providers', 'Provider cards', 'connect integration configure test'], ['providers', 'UniFi', 'network controller'], ['providers', 'Docker', 'containers socket'], ['providers', 'Grafana', 'panels token'], ['providers', 'TrueNAS', 'storage api key'], ['providers', 'Tracearr', 'media streams key'], ['providers', 'Dropped Needle', 'music plex sign in'], ['providers', 'Add provider', 'catalog browse integration'],
     ['fleet', 'Add service', 'probe monitor port'], ['fleet', 'Hidden services', 'restore hide'],
     ['security', 'Security score', 'posture rating'], ['security', 'Audit journal', 'log actions history'], ['security', 'Stored credentials', 'keys secrets vault masked'], ['security', 'Authentication', 'password login gate'],
@@ -6368,8 +6387,10 @@ function settingsAppearance() {
         <div class="card"><div class="card-title">Motion</div><div class="set-desc" style="margin-bottom:10px">Reduced switches off pulses and slide transitions. Also honors your OS "reduce motion" preference automatically.</div>${seg(mot, [['full', 'Full'], ['reduced', 'Reduced']], 'setMotion')}</div>
     </div>
     <div class="card" style="margin-top:14px"><div class="card-title">Preview <span class="sub">live — reflects your choices instantly</span></div>
-        <div class="ap-preview"><section class="lane" style="margin:0"><div class="lane-head"><span class="eyebrow">Sample lane</span><span class="lane-meta"><span class="dot live"></span>live</span></div><hr class="hair"><div class="lane-body"><div class="insp-row"><span class="insp-k"><span class="dot ok"></span>A healthy service</span><span class="insp-v">12ms</span></div><div class="insp-row"><span class="insp-k"><span class="dot warn"></span>Something warming</span><span class="insp-v">82%</span></div></div></section></div></div>
-    <div style="margin-top:14px">${customTilesCard()}</div>`;
+        <div class="ap-preview"><section class="lane" style="margin:0"><div class="lane-head"><span class="eyebrow">Sample lane</span><span class="lane-meta"><span class="dot live"></span>live</span></div><hr class="hair"><div class="lane-body"><div class="insp-row"><span class="insp-k"><span class="dot ok"></span>A healthy service</span><span class="insp-v">12ms</span></div><div class="insp-row"><span class="insp-k"><span class="dot warn"></span>Something warming</span><span class="insp-v">82%</span></div></div></section></div></div>`;
+}
+function settingsTiles() {
+    return `<div class="set-desc" style="margin:2px 4px 14px">Quick-links, embeds and live API tiles for your dashboard — the escape hatch for anything not in the provider catalog.</div>${customTilesCard()}`;
 }
 function settingsSecurity() {
     const meta = Store.meta;
@@ -6562,7 +6583,7 @@ function setSectionBody(id) {
         const custom = Array.isArray(s.customServices) ? s.customServices : [];
         return servicesLedger(new Set(custom.map(c => c.name)), Array.isArray(s.hiddenServices) ? s.hiddenServices : []);
     }
-    return ({ general: settingsGeneral, appearance: settingsAppearance, providers: settingsProviders, security: settingsSecurity, automation: settingsAutomation, data: settingsData, about: settingsAbout }[id] || settingsProviders)();
+    return ({ general: settingsGeneral, appearance: settingsAppearance, tiles: settingsTiles, providers: settingsProviders, security: settingsSecurity, automation: settingsAutomation, data: settingsData, about: settingsAbout }[id] || settingsProviders)();
 }
 function setSearchHits() {
     const q = _setQ.trim().toLowerCase();
@@ -6582,7 +6603,7 @@ function mobileSettings() {
     const q = _setQ.trim().toLowerCase();
     const hits = setSearchHits();
     const hitRows = q ? `<div class="mset-group" style="margin-top:10px">${hits.slice(0, 8).map(h => `<button class="mset-row" onclick="onSetSearch('');setSettingsDest('${h[0]}')"><span class="mset-txt"><b>${esc(h[1])}</b><i>${esc(SET_SECTIONS.find(x => x.id === h[0]).label)}</i></span><span class="mset-chev">›</span></button>`).join('') || '<div class="lbl" style="padding:12px">No settings match.</div>'}</div>` : '';
-    const groups = [['Personalize', ['general', 'appearance']], ['Connections', ['providers', 'fleet']], ['System', ['security', 'automation', 'data', 'about']]];
+    const groups = [['Personalize', ['general', 'appearance', 'tiles']], ['Connections', ['providers', 'fleet']], ['System', ['security', 'automation', 'data', 'about']]];
     const row = sec => `<button class="mset-row" onclick="setSettingsDest('${sec.id}')"><span class="mset-ico">${navSvg(sec.ico)}</span><span class="mset-txt"><b>${esc(sec.label)}</b><i>${esc(sec.sub)}</i></span><span class="mset-chev">›</span></button>`;
     return `<div class="mset">
         <input class="set-input" id="setQ" aria-label="Search settings" placeholder="Search settings…" value="${esc(_setQ)}" oninput="onSetSearch(this.value)" autocomplete="off">

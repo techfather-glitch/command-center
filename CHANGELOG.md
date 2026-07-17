@@ -13,6 +13,20 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Live Activity title preference.** Choose whether a stream reads **Episode** first
   (default), **Series** first, or **Combined** ("Show — Episode") — some people want the
   show name bigger, others the episode name. Settings → Appearance → Live Activity title.
+- **Accent colours actually work now.** The Appearance colour swatches were dead (the accent
+  had been pinned to teal); they recolour the live/active accent again — status green/amber/red
+  stay reserved for state — with a wider palette (teal · cyan · sky · blue · indigo · violet ·
+  fuchsia), applied on click and at boot.
+- **Custom tiles have their own home.** Bookmarks, embeds and custom-API tiles moved out of
+  Appearance into a dedicated **Tiles** settings section (and settings search finds them there).
+
+### Changed
+- **Networking only appears when you actually run a network controller.** The nav item used to
+  light up for any network-category provider — a VPN (Tailscale) or a DNS filter (AdGuard/Pi-hole)
+  — even without a router. It now requires a real controller (UniFi / pfSense / OPNsense / OpenWrt
+  / MikroTik / Omada).
+- **Compact density is noticeably tighter.** It now pulls in card and lane padding and the big
+  hero figures, so the difference from Comfortable is obvious.
 
 ## [2.8.0] — 2026-07-17
 
