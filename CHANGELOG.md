@@ -4,6 +4,14 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.5] — 2026-07-17
+
+### Changed
+- **External URL is now the default when opening a service.** If you've set an external / public URL
+  for a service, **Open** everywhere it appears — the provider card, the provider drawer, Home
+  dashboard tiles and the Containers app cards — now goes to the external address by default, with the
+  internal / local address kept one click away as a secondary link.
+
 ## [2.9.4] — 2026-07-17
 
 ### Fixed

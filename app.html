@@ -189,6 +189,8 @@
     .svc-open:hover { text-decoration: underline; }
     .ig-open { color: var(--accent); font-weight: 650; font-size: 11px; margin-left: 6px; white-space: nowrap; }
     .ig-open:hover { text-decoration: underline; }
+    .ig-open-alt { color: var(--faint); font-weight: 500; }
+    .pv-addr-alt { opacity: .62; }
 
     .action-row { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; border-top: 1px solid var(--border-soft); }
     .fix-btn { margin-left: auto; flex: 0 0 auto; background: color-mix(in srgb, var(--red) 18%, var(--card)); border: 1px solid color-mix(in srgb, var(--red) 45%, var(--border)); color: var(--red); border-radius: 8px; padding: 6px 13px; font-weight: 650; font-size: 12.5px; }
@@ -6320,10 +6322,11 @@ function normOpen(u) { u = String(u || '').trim(); if (!u) return ''; if (!/^htt
    when both exist, else a single Open. stopPropagation so a card's own click still works. */
 function openLinks(internal, external) {
     const i = normOpen(internal), e = normOpen(external);
-    const lnk = (u, lbl, kind) => `<a class="ig-open" href="${esc(u)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open ${esc(u)}${kind ? ' (' + kind + ')' : ''}">${lbl}</a>`;
-    if (i && e) return lnk(i, 'int ↗', 'internal') + lnk(e, 'ext ↗', 'external');
-    const one = i || e;
-    return one ? lnk(one, 'open ↗') : '';
+    const lnk = (u, lbl, cls, kind) => `<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open ${esc(u)}${kind ? ' (' + kind + ')' : ''}">${lbl}</a>`;
+    // External is the default when it's configured; internal stays one click away.
+    if (i && e) return lnk(e, 'ext ↗', 'ig-open', 'external · default') + lnk(i, 'int ↗', 'ig-open ig-open-alt', 'internal');
+    const one = e || i;
+    return one ? lnk(one, 'open ↗', 'ig-open') : '';
 }
 /* External URL configured for a service/app key (from its integration endpoint). */
 function externalFor(key) { const ep = (Store.settings && Store.settings.endpoints) || {}; return (ep[key] && ep[key].externalUrl) || ''; }
@@ -6331,14 +6334,14 @@ function externalFor(key) { const ep = (Store.settings && Store.settings.endpoin
    offer the choice (Internal / External) instead of silently defaulting to one. */
 function openChooser(internal, external) {
     const i = normOpen(internal), e = normOpen(external);
-    if (i && e) return `<a class="pv-addr mono" href="${esc(i)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(i)} (internal)">Internal ↗</a><a class="pv-addr mono" href="${esc(e)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(e)} (external)">External ↗</a>`;
-    const one = i || e;
+    if (i && e) return `<a class="pv-addr mono" href="${esc(e)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(e)} (external · default)">External ↗</a><a class="pv-addr mono pv-addr-alt" href="${esc(i)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(i)} (internal)">Internal ↗</a>`;
+    const one = e || i;
     return one ? `<a class="pv-addr mono" href="${esc(one)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(one)}">Open ↗</a>` : '';
 }
 function openButtons(internal, external, title) {
     const i = normOpen(internal), e = normOpen(external);
-    if (i && e) return `<button class="det-btn" onclick="window.open('${esc(i)}','_blank','noopener')">Internal ↗</button><button class="det-btn" onclick="window.open('${esc(e)}','_blank','noopener')">External ↗</button>`;
-    const one = i || e;
+    if (i && e) return `<button class="det-btn primary" onclick="window.open('${esc(e)}','_blank','noopener')">Open External ↗</button><button class="det-btn" onclick="window.open('${esc(i)}','_blank','noopener')">Internal ↗</button>`;
+    const one = e || i;
     return one ? `<button class="det-btn" onclick="window.open('${esc(one)}','_blank','noopener')">Open${title ? ' ' + esc(title) : ''} ↗</button>` : '';
 }
 /* Tailscale device browser — your tailnet at a glance, each device's 100.x IP one click to copy. */
