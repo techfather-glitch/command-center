@@ -2397,7 +2397,7 @@ const Providers = (() => {
                 healthState: !def.enabled ? 'unknown' : w == null ? 'unknown' : w.ok === false ? 'offline' : 'ok',
                 errorState: def.enabled && w && w.ok === false ? { message: errText(w.error) } : null,
                 updatedAt: w && w.updatedAt, realtime: { capability: 'poll-slow', channel: null, interval: (def.poll || 30) * 1000 },
-                data: w, links: { open: def.url || def.defaultUrl, settings: '#/settings' }, source: '/api/widget'
+                data: w, links: { open: def.url || def.defaultUrl, external: def.externalUrl || '', settings: '#/settings' }, source: '/api/widget'
             }));
         });
         // — probed services become thin providers for their concept (skip ones a
@@ -2791,6 +2791,13 @@ function isEditingView() {
     const a = document.activeElement;
     return !!(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest('#view'));
 }
+function isDrawerOpen() { const d = document.getElementById('drawer'); return !!(d && d.getAttribute('data-open') === 'true'); }
+// A background refresh (SSE flip, 20s tick) must not repaint over someone mid-task:
+// typing in a field, dragging a tile, reading an open drawer, or configuring a
+// provider (an expanded Settings row). Those states own the DOM until the user is
+// done; the next tick catches up. This is what stops the config panel / catalog
+// from collapsing out from under you a few seconds after you open it.
+function uiInteracting() { return isEditingView() || _dragKey || isDrawerOpen() || (route === 'settings' && !!igExpanded); }
 async function refreshIntegrations() { try { Store.integrations = await jget('/api/integrations'); } catch (e) {} }
 function enabledIntegrations() { return (Store.integrations || []).filter(d => d.enabled); }
 async function refreshWidget(id) { try { Store.widgets[id] = await jpost('/api/widget', { type: id }); } catch (e) { Store.widgets[id] = { ok: false, error: e.message }; } }
@@ -2878,7 +2885,7 @@ const Live = {
     },
     _paint() {
         if (this._t) return;   // coalesce a burst of flips into one repaint
-        this._t = setTimeout(() => { this._t = null; _verdict = null; if (!isEditingView() && !_dragKey) render(); updateFoot(); }, 250);
+        this._t = setTimeout(() => { this._t = null; _verdict = null; if (!uiInteracting()) render(); updateFoot(); }, 250);
     },
     _tickFresh() { renderConnBadge(); }
 };
@@ -2890,7 +2897,7 @@ async function reducedTick() {
     await refreshUnifi();
     await refreshRoute();
     pushHistory();
-    if (!isEditingView() && !_dragKey) render();
+    if (!uiInteracting()) render();
     updateFoot();
 }
 /* On navigation, pull just the new route's data (fast) and repaint over the skeletons. */
@@ -5821,6 +5828,7 @@ function igConfigForm(d) {
     const bt = d.baseType || d.id, isInstance = String(d.id).includes('#');
     return `${field('Name', 'ign_' + d.id, d.title || '', d.title || '')}
         ${field('URL', 'igu_' + d.id, d.url || igDiscovered[d.id] || d.defaultUrl || '', d.defaultUrl || 'http://host:port')}
+        ${field('External URL', 'igx_' + d.id, d.externalUrl || '', 'https://sonarr.example.com — reach it anywhere (optional)')}
         ${af.map(f => f.kind === 'secret' ? credField(f.label, 'igf_' + d.id + '_' + f.name, igFieldSet(d.id, f.name), f.label) : field(f.label, 'igf_' + d.id + '_' + f.name, igTextVal(d.id, f.name), f.label)).join('')}
         ${cf.map(f => field(f.label, 'igf_' + d.id + '_' + f.name, igCfgVal(d.id, f.name), f.label)).join('')}
         <div class="ig-cat-act">
@@ -5872,7 +5880,7 @@ window.igFilterCatalog = function (q) { igSearchQ = (q || '').trim().toLowerCase
 async function igSave(id, enable) {
     const d = (Store.integrations || []).find(x => x.id === id); if (!d) return false;
     const s = Store.settings || {};
-    const endpoints = Object.assign({}, s.endpoints); endpoints[id] = Object.assign({}, endpoints[id], { url: gv('igu_' + id) });
+    const endpoints = Object.assign({}, s.endpoints); endpoints[id] = Object.assign({}, endpoints[id], { url: gv('igu_' + id), externalUrl: (gv('igx_' + id) || '').trim() });
     const apiKeys = Object.assign({}, s.apiKeys);
     const integrations = Object.assign({}, s.integrations);
     const cfg = Object.assign({}, integrations[id]);
@@ -6196,6 +6204,9 @@ function providerAddr(p) {
 }
 /* Copyable address chip — click to copy the full URL, shows the host:port. */
 function addrChip(addr) { return addr ? `<button class="pv-addr mono" onclick="copyText('${esc(addr)}')" title="Copy ${esc(addr)}">${esc(hostOf(addr))} ⧉</button>` : ''; }
+/* External/public address chip — the reach-anywhere URL, opens in a new tab. A bare
+   domain is upgraded to https:// (which also neutralises any non-http scheme). */
+function extChip(url) { if (!url) return ''; let u = String(url).trim(); if (!/^https?:\/\//i.test(u)) u = 'https://' + u; return `<a class="pv-addr mono" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="Open ${esc(u)} (external)">${esc(hostOf(u))} ↗</a>`; }
 /* Tailscale device browser — your tailnet at a glance, each device's 100.x IP one click to copy. */
 window.openTsDrawer = async function (id) {
     id = id || 'tailscale';
@@ -6218,7 +6229,7 @@ function providerCard(p) {
     const rt = p.realtime && p.realtime.channel ? `SSE · ${p.realtime.channel}` : `poll ${Math.round(((p.realtime || {}).interval || 20000) / 1000)}s`;
     return `<div class="pv-card" data-state="${health === 'ok' ? '' : health}">
         <div class="pv-head">${iconImg(p.title, 28)}<div class="pv-id"><span class="pv-name">${esc(p.title)}</span><span class="pv-meta"><span class="dot ${health}"></span>${healthTxt}${sync ? ' · synced ' + sync : ''}</span></div><span class="pv-kind">${p.kind === 'catalog' ? 'integration' : 'native'}</span></div>
-        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}${addrChip(addr)}</div>
+        <div class="pv-facts"><span class="pv-fact">${esc(p.concepts.map(c => c[0].toUpperCase() + c.slice(1)).join(' · ') || '—')}</span><span class="pv-fact mono">${esc(rt)}</span>${p.scope === 'control' ? '<span class="pv-fact" style="color:var(--live)">control</span>' : ''}${addrChip(addr)}${extChip(p.links && p.links.external)}</div>
         ${p.errorState ? `<div class="pv-err">${esc(p.errorState.message)}</div>` : ''}
         <div class="pv-acts">
             <button class="tbtn" onclick="openProviderCfg('${esc(p.id)}')">Configure</button>

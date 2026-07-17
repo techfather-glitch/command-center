@@ -3082,7 +3082,11 @@ const server = http.createServer(async (req, res) => {
             // provider card can render control buttons.
             actions: (d.actions || []).map(a => ({ id: a.id, label: a.label, confirm: !!a.confirm, danger: !!a.danger, params: a.params || [] })),
             enabled: (DEMO && DEMO_ENABLED.has(id)) || !!(igCfg[id] && igCfg[id].enabled),
-            url: (DEMO && DEMO_ENABLED.has(id)) ? (d.defaultUrl || '') : (storedEndpoint(id) || '')
+            url: (DEMO && DEMO_ENABLED.has(id)) ? (d.defaultUrl || '') : (storedEndpoint(id) || ''),
+            // Optional second address (e.g. a public domain via reverse proxy) so the
+            // service is reachable from anywhere. Not a secret and not used for the
+            // server-side fetch — purely a user-facing link.
+            externalUrl: ((settings.endpoints || {})[id] || {}).externalUrl || ''
         });
         const cat = Object.values(INTEGRATIONS).map(d => mk(d.id, d));
         for (const id of Object.keys(igCfg)) { if (id.includes('#') && INTEGRATIONS[baseType(id)]) cat.push(mk(id, INTEGRATIONS[baseType(id)])); }

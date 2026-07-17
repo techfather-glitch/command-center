@@ -12,6 +12,11 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **X-API-Key** and its tile shows how many qBittorrent instances are wired up, how many are
   currently connected, and a badge when a qui update is available. Read-only — it reports
   state, it doesn't drive qui.
+- **A second, external URL per service.** Every provider now has an optional **External URL**
+  field (Settings → Integrations → Configure) for a public / reverse-proxy address such as
+  `sonarr.example.com`, so the service is reachable from anywhere — not just on the LAN. It
+  appears as a click-to-open chip on the provider card, next to the copyable local address.
+  It's a link only: the server still fetches over the local URL.
 
 ### Fixed
 - **The integration search box could only find already-visible services.** The catalog
@@ -32,6 +37,11 @@ aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   in Settings. Not-configured is now treated as a calm setup prompt everywhere; only a
   *configured* service that actually fails shows an error, and it now names the real cause
   instead of a hardcoded label.
+- **The provider config no longer collapses or resets mid-setup.** A background refresh (an
+  SSE status flip or the 20s tick) now holds off repainting the page while you have a drawer
+  open or a provider's config expanded — so the panel stays put and a field you're filling
+  in can't be wiped a few seconds after you open it. The next refresh catches up once you're
+  done.
 
 ## [2.7.0] — 2026-07-08
 
