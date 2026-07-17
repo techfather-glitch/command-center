@@ -1,5 +1,5 @@
 # Command Center — a single Node.js process, zero dependencies, no build step.
-FROM node:22-alpine
+FROM node:26-alpine
 
 WORKDIR /app
 COPY server.js app.html package.json ./
