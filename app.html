@@ -2432,7 +2432,10 @@ const Providers = (() => {
             if (!concept) return;
             const flat = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
             if (/tracearr/i.test(s.name)) return;
-            if ([...enabledIds].some(id => flat.includes(id.replace(/[^a-z0-9]/g, '')))) return;
+            // De-dup a probed service against an enabled integration for the SAME product —
+            // match by name substring OR by shared icon slug, so e.g. a "Seer" service and the
+            // "overseerr" integration (Overseerr / Jellyseerr) collapse to one tile, not two.
+            if ([...enabledIds].some(id => { const idf = id.replace(/[^a-z0-9]/g, ''); return flat.includes(idf) || (iconSlug(s.name) && iconSlug(s.name) === iconSlug(id)); })) return;
             out.push(P({
                 id: 'svc:' + s.name.toLowerCase(), title: s.name, icon: s.name, kind: 'service', category: s.type, concepts: [concept], role: 'probe',
                 healthState: svcOnline(s) ? 'ok' : 'offline', data: s, links: { open: s.url || '' }, source: 'port probe'

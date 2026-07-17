@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.2] — 2026-07-17
+
+### Fixed
+- **Overseerr / Jellyseerr / Seer no longer show up twice.** A "Seer" monitored service and the
+  Overseerr / Jellyseerr integration are the same product, but the dashboard de-dup only matched
+  when the service *name contained the integration id* — and "seer" doesn't contain "overseerr", so
+  both rendered as separate tiles. De-dup now also matches by shared icon identity, so the redundant
+  probe collapses into the one integration tile.
+
 ## [2.9.1] — 2026-07-17
 
 ### Added
