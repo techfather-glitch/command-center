@@ -4,6 +4,16 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1] — 2026-07-17
+
+### Added
+- **Appearance: text size and font.** Settings → Appearance now has a **Text size**
+  (Compact · Default · Large · Larger) and a **Font** (Inter · System · Mono · Serif)
+  control — both self-hosted (no web fonts), saved per device.
+- **Live Activity title preference.** Choose whether a stream reads **Episode** first
+  (default), **Series** first, or **Combined** ("Show — Episode") — some people want the
+  show name bigger, others the episode name. Settings → Appearance → Live Activity title.
+
 ## [2.8.0] — 2026-07-17
 
 ### Added

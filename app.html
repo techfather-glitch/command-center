@@ -694,6 +694,11 @@
     .theme-sw:hover { color: var(--text); }
     .theme-sw.active { color: var(--text); border-color: color-mix(in srgb, var(--sw1) 60%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--sw1) 40%, transparent); }
     .theme-dot { width: 18px; height: 18px; border-radius: 999px; flex: 0 0 auto; background: linear-gradient(135deg, var(--sw1), var(--sw2)); box-shadow: 0 0 8px color-mix(in srgb, var(--sw1) 55%, transparent); }
+    /* segmented preference controls (text size / font / media title) */
+    .seg-row { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+    .seg-btn { padding: 7px 13px; border-radius: 9px; border: 1px solid var(--border); background: var(--card-2); color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color .14s, color .14s; }
+    .seg-btn:hover { color: var(--text); }
+    .seg-btn.active { color: var(--text); border-color: color-mix(in srgb, var(--live) 55%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--live) 35%, transparent); }
     /* first-run welcome + adaptive dashboard grid */
     
     .welcome { max-width: 580px; width: 100%; text-align: center; padding: 40px 36px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
@@ -2537,6 +2542,25 @@ function applyTheme(id) {
     try { localStorage.setItem('hl-accent', id); } catch (e) {}
 }
 window.setTheme = function (id) { applyTheme(id); renderTopbar(); };
+/* Per-device appearance prefs (saved in localStorage, like the theme):
+   - font family overrides --font app-wide (self-hosted/system stacks only, no CDN),
+   - text size zooms the content area (#view) — sizes are px, so a root font-size
+     wouldn't scale them, and zooming #view avoids flipping the responsive breakpoints,
+   - media-title emphasis flips series/episode order in Live Activity (see streamMeta). */
+const UI_SCALES = { sm: 0.9, md: 1, lg: 1.1, xl: 1.25 };
+const FONT_STACKS = { inter: "'Inter',-apple-system,'SF Pro Text',system-ui,sans-serif", system: "-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif", mono: "'Geist Mono','SF Mono',ui-monospace,monospace", serif: "Georgia,'Times New Roman',serif" };
+function uiScale() { try { const v = localStorage.getItem('cc-ui-scale'); return UI_SCALES[v] ? v : 'md'; } catch (e) { return 'md'; } }
+function uiFont() { try { const v = localStorage.getItem('cc-font'); return FONT_STACKS[v] ? v : 'inter'; } catch (e) { return 'inter'; } }
+function mediaEmphasis() { try { const v = localStorage.getItem('cc-media-emphasis'); return (v === 'series' || v === 'combined') ? v : 'episode'; } catch (e) { return 'episode'; } }
+function applyAppearance() {
+    const z = UI_SCALES[uiScale()] || 1;
+    const v = document.getElementById('view'); if (v) v.style.zoom = z === 1 ? '' : String(z);
+    document.documentElement.style.setProperty('--font', FONT_STACKS[uiFont()] || FONT_STACKS.inter);
+}
+window.setUiScale = function (id) { try { localStorage.setItem('cc-ui-scale', id); } catch (e) {} applyAppearance(); if (route === 'settings') render(); };
+window.setUiFont = function (id) { try { localStorage.setItem('cc-font', id); } catch (e) {} applyAppearance(); if (route === 'settings') render(); };
+window.setMediaEmphasis = function (id) { try { localStorage.setItem('cc-media-emphasis', id); } catch (e) {} if (route === 'settings') render(); };
+applyAppearance();
 /* GAUGE: accent is a single fixed teal (--live); the per-theme override is retired so
    the accent never competes with the status-green. THEMES/setTheme kept but unused. */
 document.documentElement.style.removeProperty('--accent');
@@ -4045,8 +4069,12 @@ function streamMeta(s) {
     let title, sub, type;
     if (isEpisode) {
         type = 'TV';
-        title = s.mediaTitle || s.showTitle || 'Unknown';
-        sub = [s.showTitle, (s.seasonNumber != null && s.episodeNumber != null) ? ('S' + s.seasonNumber + '·E' + s.episodeNumber) : (s.episodeNumber != null ? 'E' + s.episodeNumber : '')].filter(v => v != null && v !== '').join(' · ');
+        const ep = s.mediaTitle || '', show = s.showTitle || '';
+        const se = (s.seasonNumber != null && s.episodeNumber != null) ? ('S' + s.seasonNumber + '·E' + s.episodeNumber) : (s.episodeNumber != null ? 'E' + s.episodeNumber : '');
+        const emph = mediaEmphasis();
+        if (emph === 'series') { title = show || ep || 'Unknown'; sub = [ep, se].filter(Boolean).join(' · '); }
+        else if (emph === 'combined') { title = [show, ep].filter(Boolean).join(' — ') || 'Unknown'; sub = se; }
+        else { title = ep || show || 'Unknown'; sub = [show, se].filter(Boolean).join(' · '); }   // 'episode' (default)
     } else if (isMusic) {
         type = 'Music';
         title = s.mediaTitle || 'Unknown';
@@ -5861,9 +5889,14 @@ function igCatalogRow(d, extra) {
 }
 function appearanceCard() {
     const cur = currentTheme();
-    return `<div class="card" style="margin-bottom:18px"><div class="card-title">Appearance</div>
-        <div class="set-desc" style="margin-bottom:12px">Accent colour — applies instantly across the whole dashboard, saved on this device.</div>
-        <div class="theme-row">${Object.keys(THEMES).map(id => { const t = THEMES[id]; return `<button class="theme-sw ${id === cur ? 'active' : ''}" onclick="setTheme('${id}')" title="${esc(t.name)}" style="--sw1:${t.accent};--sw2:${t.accent2}"><span class="theme-dot"></span>${esc(t.name)}</button>`; }).join('')}</div></div>`;
+    const seg = (label, hint, opts, current, fn) => `<div class="set-field" style="margin-top:16px"><label>${esc(label)}${hint ? ` <span style="color:var(--faint);font-weight:500">— ${esc(hint)}</span>` : ''}</label><div class="seg-row">${opts.map(o => `<button class="seg-btn ${o.id === current ? 'active' : ''}" onclick="${fn}('${o.id}')">${esc(o.label)}</button>`).join('')}</div></div>`;
+    return `<div class="card" style="margin-bottom:18px"><div class="card-title">Appearance <span class="sub">saved on this device</span></div>
+        <div class="set-desc" style="margin-bottom:12px">Accent colour — applies instantly across the whole dashboard.</div>
+        <div class="theme-row">${Object.keys(THEMES).map(id => { const t = THEMES[id]; return `<button class="theme-sw ${id === cur ? 'active' : ''}" onclick="setTheme('${id}')" title="${esc(t.name)}" style="--sw1:${t.accent};--sw2:${t.accent2}"><span class="theme-dot"></span>${esc(t.name)}</button>`; }).join('')}</div>
+        ${seg('Text size', 'scales the content area', [{ id: 'sm', label: 'Compact' }, { id: 'md', label: 'Default' }, { id: 'lg', label: 'Large' }, { id: 'xl', label: 'Larger' }], uiScale(), 'setUiScale')}
+        ${seg('Font', '', [{ id: 'inter', label: 'Inter' }, { id: 'system', label: 'System' }, { id: 'mono', label: 'Mono' }, { id: 'serif', label: 'Serif' }], uiFont(), 'setUiFont')}
+        ${seg('Live Activity title', 'which name reads bigger', [{ id: 'episode', label: 'Episode' }, { id: 'series', label: 'Series' }, { id: 'combined', label: 'Combined' }], mediaEmphasis(), 'setMediaEmphasis')}
+    </div>`;
 }
 function igCatalogCard() {
     const cats = Store.integrations || [];
