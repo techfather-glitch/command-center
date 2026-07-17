@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] — 2026-07-17
+
+### Added
+- **Customise the Home dashboard — move *and* resize tiles.** A new **Edit layout** button on
+  Home turns on an edit mode: drag a tile to reorder it, and drag its bottom-right corner to
+  resize — wider (1–3 columns) so a cramped tile like a multi-instance qui can show its full
+  content, and taller to give it room. Nothing auto-resizes; sizing is manual and saved with the
+  layout (alongside tile order). Click **Done** to lock it back to a clean, static board.
+
 ## [2.8.1] — 2026-07-17
 
 ### Added
