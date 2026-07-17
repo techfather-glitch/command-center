@@ -89,7 +89,7 @@ Command Center groups everything behind **concepts**. Providers plug in undernea
 | Concept | Providers |
 |---|---|
 | **Media** | Plex · Jellyfin · Emby · Tautulli · Tracearr · Dropped Needle |
-| **Automation** | Sonarr · Radarr · Lidarr · Prowlarr · Bazarr · qBittorrent · SABnzbd · Overseerr |
+| **Automation** | Sonarr · Radarr · Lidarr · Prowlarr · Bazarr · qBittorrent · qui · SABnzbd · Overseerr |
 | **Compute** | Node Exporter · Proxmox · Docker · Portainer |
 | **Applications** | Docker · cAdvisor · Portainer |
 | **Storage** | TrueNAS · Linux filesystems · Scrutiny |
@@ -146,6 +146,10 @@ Contributions are very welcome — new providers especially are easy to add. Sta
 ## Security
 
 Found a vulnerability? Please follow the disclosure process in **[SECURITY.md](SECURITY.md)** — don't open a public issue for it.
+
+## Acknowledgments
+
+Parts of Command Center were built with assistance from [Claude](https://www.anthropic.com/claude) (Anthropic).
 
 ## License
 
