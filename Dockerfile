@@ -2,7 +2,7 @@
 FROM node:22-alpine
 
 WORKDIR /app
-COPY server.js app.html ./
+COPY server.js app.html package.json ./
 COPY assets ./assets
 
 # Persist settings, the encrypted vault and the audit log here (mount a volume).

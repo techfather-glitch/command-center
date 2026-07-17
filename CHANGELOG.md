@@ -4,6 +4,14 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.8] — 2026-07-17
+
+### Fixed
+- **Settings → About now shows the real version.** The version was a hardcoded `2.0.0-gauge` string,
+  so `/api/meta` and the About page reported the wrong release no matter what was actually running. It's
+  now read from `package.json` (and the Docker image ships `package.json` so it's correct in the
+  container too) — About will read the true version from here on.
+
 ## [2.9.7] — 2026-07-17
 
 ### Fixed

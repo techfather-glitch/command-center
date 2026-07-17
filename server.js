@@ -10,7 +10,10 @@ const tls = require('tls');
 const https = require('https');
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8888;
-const APP_VERSION = '2.0.0-gauge';
+// Single source of truth for the version — read from package.json so /api/meta and the
+// About page always match the actual release (never a hardcoded string that drifts).
+let APP_VERSION = 'dev';
+try { APP_VERSION = require('./package.json').version || APP_VERSION; } catch (e) { /* package.json absent → 'dev' */ }
 const SERVER_STARTED_AT = Date.now();
 // Writable state (settings, the encrypted vault, the audit log) lives under
 // DATA_DIR so it can be mounted as a volume in Docker. Defaults to the app
