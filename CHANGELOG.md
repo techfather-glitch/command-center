@@ -4,6 +4,16 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.20] — 2026-07-17
+
+### Added
+- **Full-capability build — reads batch 1 (from the 53-service API audit).** A parallel audit mapped every
+  integration's real API — **556 extra readable fields** and **~1,740 actions**, saved as a structured
+  capability map to drive the rollout. First verified reads landed:
+  - **AdGuard**: blocklists (count + total rules), **Safe Browsing**, **Parental control**, and **DNSSEC** state.
+  - **Traefik**: real **backend health** (X/Y upstreams UP, from each service's `serverStatus`) and the reported version.
+  - More reads + the master **Service control** switch (gating every action, destructive ones confirmed) land in following batches.
+
 ## [2.9.19] — 2026-07-17
 
 ### Fixed
