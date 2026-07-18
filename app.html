@@ -704,6 +704,9 @@
     .uctl-color { width: 30px; height: 28px; padding: 0; border: 1px solid var(--hair-2); border-radius: 7px; background: transparent; cursor: pointer; }
     .uctl-bri { width: 80px; accent-color: var(--live); }
     .uctl-note { font-size: 11px; color: var(--faint); margin-top: 10px; }
+    .uni-auth { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 0 2px; }
+    .uni-auth label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+    .uni-auth input { accent-color: var(--live); }
     .hb-reset { color: var(--faint); }
     @media (max-width: 600px) { .home-board { grid-template-columns: 1fr; } .home-board .hb-block { grid-column: 1 / -1 !important; } .hb-resize { display: none; } }
     .ig-card { padding: 16px; }
@@ -5582,7 +5585,8 @@ function netDeviceControl() {
             </div>
         </div>`;
     }).join('');
-    return `<section class="lane">${head}<hr class="hair"><div class="lane-body uctl-list">${rows}</div><div class="uctl-note">Color and brightness apply only to devices with RGB LEDs; every device accepts Locate and On / Off / Auto.</div></section>`;
+    const keyNote = (Store.unifi && Store.unifi.integrationApi) ? `<div class="uctl-note" style="color:var(--warn);margin:0 0 10px">This instance uses API-key auth — the key's Integration API can't control LEDs. Switch its auth to username &amp; password in Settings to use these controls.</div>` : '';
+    return `<section class="lane">${head}<hr class="hair">${keyNote}<div class="lane-body uctl-list">${rows}</div><div class="uctl-note">Color and brightness apply only to devices with RGB LEDs; every device accepts Locate and On / Off / Auto.</div></section>`;
 }
 PAGES.networking = function () {
     const u = Store.unifi;
@@ -6531,7 +6535,11 @@ function servicesLedger(customNames, hidden) {
 function nativeCfgForm(id) {
     const s = Store.settings || {}, unifi = s.unifi || {}, ak = s.apiKeys || {};
     const keyOf = svc => (ak[svc] && ak[svc].key) ? ak[svc].key : '';
-    if (id === 'unifi') return `${field('Controller URL', 'uniUrl', unifi.url || '', 'https://192.168.1.1')}${credField('Username', 'uniUser', unifi.username, 'admin', 'text')}${credField('Password', 'uniPass', unifi.password, '••••••••')}${field('Site', 'uniSite', unifi.site || 'default', 'default')}<button class="tbtn primary" style="margin-top:8px" onclick="saveUnifi()">Save UniFi</button>`;
+    if (id === 'unifi') { const uMethod = unifi.authMethod === 'apikey' ? 'apikey' : (unifi.authMethod === 'password' ? 'password' : (unifi.apiKey === '***' ? 'apikey' : 'password')); return `${field('Controller URL', 'uniUrl', unifi.url || '', 'https://192.168.1.1')}
+        <div class="set-field"><label>Authentication</label><div class="uni-auth"><label><input type="radio" name="uniAuth" value="password" ${uMethod === 'password' ? 'checked' : ''} onchange="uniAuthToggle()"> Username &amp; password</label><label><input type="radio" name="uniAuth" value="apikey" ${uMethod === 'apikey' ? 'checked' : ''} onchange="uniAuthToggle()"> API key</label></div></div>
+        <div id="uniAuthPass" style="${uMethod === 'apikey' ? 'display:none' : ''}">${credField('Username', 'uniUser', unifi.username, 'admin', 'text')}${credField('Password', 'uniPass', unifi.password, '••••••••')}</div>
+        <div id="uniAuthKey" style="${uMethod === 'apikey' ? '' : 'display:none'}">${credField('API key', 'uniKey', unifi.apiKey, 'X-API-KEY from UniFi Network → Settings → Control Plane')}<div class="set-desc" style="margin-top:6px">UniFi's official Integration API — read-only dashboard data. LED &amp; locate control need username &amp; password.</div></div>
+        ${field('Site', 'uniSite', unifi.site || 'default', 'default')}<button class="tbtn primary" style="margin-top:8px" onclick="saveUnifi()">Save UniFi</button>`; }
     if (id === 'docker') return `<div class="set-desc" style="margin-bottom:10px">Docker Engine API / socket-proxy URL. Enables live CPU/RAM, start/stop/restart & logs — without it, containers stay read-only via cAdvisor.</div>${field('Docker host', 'dockerHostInput', s.dockerHost || '', 'http://192.168.1.10:2375')}<button class="tbtn primary" style="margin-top:8px" onclick="saveDockerHost()">Save & connect</button>${Store.docker && Store.docker.error ? `<div style="margin-top:8px"><span class="badge">Error: ${esc(Store.docker.error)}</span></div>` : ''}`;
     if (id === 'grafana') return `<div class="set-desc" style="margin-bottom:10px">Panels render through the server — the token never reaches the browser.</div>${field('Grafana URL', 'grafanaUrl', (s.endpoints && s.endpoints.grafana && s.endpoints.grafana.url) || '', 'https://192.168.1.10:3000')}${credField('Service-account token', 'grafanaToken', (ak.Grafana && ak.Grafana.token), 'glsa_…')}<button class="tbtn primary" style="margin-top:8px" onclick="saveGrafana()">Save Grafana</button>
         <div class="svc-group__label" style="margin-top:14px">Embedded panels</div>
@@ -7022,10 +7030,12 @@ function jstr(v) { return "'" + String(v).replace(/\\/g, '\\\\').replace(/'/g, "
 window.saveDockerHost = async function () {
     if (await saveSettings({ dockerHost: gv('dockerHostInput') }, 'Saving Docker host…')) { await refreshDocker(); render(); toast(dockerControl() ? 'Docker connected ✓' : (Store.docker && Store.docker.error ? 'Saved — ' + Store.docker.error : 'Saved (not reachable)')); }
 };
+window.uniAuthToggle = function () { const m = (document.querySelector('input[name="uniAuth"]:checked') || {}).value || 'password'; const pass = document.getElementById('uniAuthPass'), key = document.getElementById('uniAuthKey'); if (pass) pass.style.display = m === 'apikey' ? 'none' : ''; if (key) key.style.display = m === 'apikey' ? '' : 'none'; };
 window.saveUnifi = async function () {
-    const unifi = { url: gv('uniUrl'), site: gv('uniSite') || 'default' };
+    const unifi = { url: gv('uniUrl'), site: gv('uniSite') || 'default', authMethod: ((document.querySelector('input[name="uniAuth"]:checked') || {}).value === 'apikey') ? 'apikey' : 'password' };
     const u = gv('uniUser'); if (u) unifi.username = u;
     const p = gv('uniPass'); if (p) unifi.password = p;
+    const k = gv('uniKey'); if (k && k !== '***') unifi.apiKey = k;
     if (await saveSettings({ unifi }, 'Saving UniFi…')) {
         // Credentials are persisted the instant saveSettings returns. Test the
         // connection in the BACKGROUND — never block "saved" on reaching a

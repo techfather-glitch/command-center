@@ -455,3 +455,36 @@ test('the secret sentinel is a placeholder, not a real value', () => {
   assert.equal(isSecretPlaceholder('••••••••'), true);
   assert.equal(isSecretPlaceholder('a-real-api-key'), false);
 });
+
+// ── UniFi API-key (Integration API) path: model classification + device mapping ──
+test('UniFi Integration-API model strings classify into the right device buckets', () => {
+  const { unifiDeviceKind } = cc;
+  assert.equal(unifiDeviceKind({ model: 'UDM-Pro' }), 'gateway');
+  assert.equal(unifiDeviceKind({ model: 'UCG-Ultra' }), 'gateway');
+  assert.equal(unifiDeviceKind({ model: 'USW-24-PoE' }), 'switch');
+  assert.equal(unifiDeviceKind({ model: 'U6-LR' }), 'ap');
+  assert.equal(unifiDeviceKind({ model: 'U7-Pro' }), 'ap');
+});
+
+test('UniFi summary maps Integration-API devices (id + led surfaced, buckets correct)', () => {
+  const { summarizeUnifi } = cc;
+  const devices = [
+    { _id: 'd1', name: 'UDM', model: 'UDM-Pro', mac: 'aa:bb:cc:00:00:01', ip: '10.0.0.1', state: 1, up: true, num_sta: 12 },
+    { _id: 'd2', name: 'Switch', model: 'USW-24-PoE', mac: 'aa:bb:cc:00:00:02', state: 1, up: true },
+    { _id: 'd3', name: 'AP', model: 'U6-LR', mac: 'aa:bb:cc:00:00:03', state: 0, up: false }
+  ];
+  const clients = [
+    { name: 'phone', ip: '10.0.0.50', mac: 'dd:ee:ff:00:00:01', is_wired: false },
+    { name: 'nas', ip: '10.0.0.51', mac: 'dd:ee:ff:00:00:02', is_wired: true }
+  ];
+  const s = summarizeUnifi(devices, clients, [], { url: 'https://c', site: 'default' });
+  assert.equal(s.gateway.devices.length, 1);
+  assert.equal(s.switches.devices.length, 1);
+  assert.equal(s.aps.devices.length, 1);
+  assert.equal(s.clients.total, 2);
+  assert.equal(s.clients.wifi, 1);
+  assert.equal(s.clients.wired, 1);
+  assert.equal(s.devices[0].id, 'd1');            // _id surfaced so LED/control can target the device
+  assert.ok(s.devices[0].led && typeof s.devices[0].led === 'object');
+  assert.equal(s.offline, 1);                     // the offline AP is counted
+});

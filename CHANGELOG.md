@@ -4,6 +4,20 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.16] — 2026-07-17
+
+### Added
+- **UniFi: authenticate with an API key *or* username/password.** Each UniFi instance now has an auth
+  choice in its config. Pick **API key** to use UniFi's official Integration API (`X-API-KEY`) — handy when
+  the account has 2FA/SSO that blocks password login — or keep **username/password** for the richer session
+  API. The key is stored encrypted like any other credential, and you can switch anytime.
+
+### Notes
+- The two paths expose different things. Username/password (the session API) carries the fuller
+  per-device/WAN stats and is the one that drives **LED override + flash-to-locate**. The API key's
+  Integration API is read-only for the dashboard and can't control LEDs — so if an instance is in key mode,
+  the Device control lane says so.
+
 ## [2.9.15] — 2026-07-17
 
 ### Added

@@ -150,7 +150,7 @@ function pullSecretsIntoVault(settings, vault) {
     }
     if (clean.unifi && typeof clean.unifi === 'object') {
         nextVault.unifi = nextVault.unifi && typeof nextVault.unifi === 'object' ? nextVault.unifi : {};
-        for (const field of ['username', 'password']) {
+        for (const field of ['username', 'password', 'apiKey']) {
             if (Object.prototype.hasOwnProperty.call(clean.unifi, field)) {
                 putSecret(nextVault, 'unifi', field, clean.unifi[field]);
                 delete clean.unifi[field];
@@ -287,7 +287,7 @@ function storedUnifiSettings() {
     const settings = readDashboardSettings();
     const u = (settings && settings.unifi && typeof settings.unifi === 'object') ? settings.unifi : {};
     const secrets = readSecretVault().unifi || {};
-    return { ...u, username: secrets.username || '', password: secrets.password || '' };
+    return { ...u, username: secrets.username || '', password: secrets.password || '', apiKey: secrets.apiKey || '' };
 }
 function migrateSettingsSecretsToVault() {
     const current = readDashboardSettings();
@@ -319,7 +319,7 @@ function injectDashboardSettings(html) {
     return html.replace('</head>', () => `${script}\n</head>`);
 }
 
-function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cookies = '', csrf = '' } = {}) {
+function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cookies = '', csrf = '', apiKey = '' } = {}) {
     return new Promise((resolve, reject) => {
         let target;
         try { target = new URL(requestPath, baseUrl); } catch (err) { reject(err); return; }
@@ -332,6 +332,7 @@ function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cooki
         };
         if (cookies) headers.Cookie = cookies;
         if (csrf) headers['X-CSRF-Token'] = csrf;   // UniFi OS requires this on write (POST/PUT) calls
+        if (apiKey) headers['X-API-KEY'] = apiKey;   // official Integration API auth
         if (payload) headers['Content-Length'] = Buffer.byteLength(payload);
         // UniFi controllers ship with a self-signed certificate, so strict TLS
         // verification would break virtually every real controller out of the
@@ -368,11 +369,15 @@ function joinCookies(cookieLines) {
 
 function safeUnifiSettings(settings) {
     const u = (settings && settings.unifi && typeof settings.unifi === 'object') ? settings.unifi : (settings || {});
+    const apiKey = String(u.apiKey || '').trim();
+    const authMethod = u.authMethod === 'apikey' ? 'apikey' : (u.authMethod === 'password' ? 'password' : (apiKey ? 'apikey' : 'password'));
     return {
         url: String(u.url || '').trim().replace(/\/+$/, ''),
         username: String(u.username || '').trim(),
         password: String(u.password || ''),
-        site: String(u.site || 'default').trim() || 'default'
+        site: String(u.site || 'default').trim() || 'default',
+        authMethod,
+        apiKey
     };
 }
 
@@ -687,9 +692,47 @@ async function unifiFetchData(settings, cookies) {
     return { devices, clients, health, unauthorized };
 }
 
+// UniFi Network Integration API (X-API-KEY). Official + MFA-friendly, but exposes less
+// than the private/session API — no WAN throughput, radios, ports or LED. We map its
+// device/client objects into the shapes summarizeUnifi() already understands, so the
+// dashboard renders the same, just with fewer per-device details.
+async function unifiIntegrationGet(settings, path) {
+    let last = '';
+    for (const p of ['/proxy/network/integration/v1' + path, '/integration/v1' + path]) {
+        try {
+            const r = await unifiRequest(settings.url, p, { apiKey: settings.apiKey });
+            if (r.status === 401 || r.status === 403) throw Object.assign(new Error('API key rejected (HTTP ' + r.status + ') — verify the key and that the Integration API is enabled on the controller'), { fatal: true });
+            if (r.status >= 200 && r.status < 300) return r.body;
+            if (r.status === 404) { last = 'HTTP 404'; continue; }   // try the non-proxy path shape
+            last = 'controller HTTP ' + r.status;
+        } catch (e) { if (e.fatal) throw e; last = describeNetErr(e, settings.url); }
+    }
+    throw new Error(last || 'Integration API unreachable');
+}
+async function unifiFetchIntegration(settings) {
+    const sitesResp = await unifiIntegrationGet(settings, '/sites');
+    const sites = (sitesResp && (sitesResp.data || sitesResp)) || [];
+    if (!Array.isArray(sites) || !sites.length) throw new Error('Integration API returned no sites');
+    const want = String(settings.site || 'default').toLowerCase();
+    const site = sites.find(s => String(s.name || s.internalReference || '').toLowerCase() === want) || sites.find(s => String(s.name || '').toLowerCase() === 'default') || sites[0];
+    const siteId = encodeURIComponent(site.id || site._id || '');
+    let idev = [], icli = [];
+    try { const r = await unifiIntegrationGet(settings, '/sites/' + siteId + '/devices'); idev = (r && (r.data || r)) || []; } catch (e) { /* devices unavailable — still render what we have */ }
+    try { const r = await unifiIntegrationGet(settings, '/sites/' + siteId + '/clients'); icli = (r && (r.data || r)) || []; } catch (e) { /* clients unavailable */ }
+    const onlineRe = /online|connected/i;
+    const devices = (Array.isArray(idev) ? idev : []).map(d => {
+        const on = onlineRe.test(String(d.state || d.status || ''));
+        return { _id: d.id || d._id || '', name: d.name || d.hostname || d.model || '', model: d.model || d.shortname || d.type || '', type: d.type || '', mac: d.macAddress || d.mac || '', ip: d.ipAddress || d.ip || '', state: on ? 1 : 0, up: on, displayable_version: d.firmwareVersion || d.version || '', upgradable: !!(d.firmwareUpdatable || d.updateAvailable), num_sta: numberOrNull(d.clientCount != null ? d.clientCount : d.numClients) || 0 };
+    });
+    const clients = (Array.isArray(icli) ? icli : []).map(c => ({ name: c.name || c.hostname || c.ipAddress || c.macAddress || 'client', ip: c.ipAddress || c.ip || '', mac: c.macAddress || c.mac || '', is_wired: /wired/i.test(String(c.type || c.connectionType || '')) || c.wired === true, network: c.network || '' }));
+    const summary = summarizeUnifi(devices, clients, [], settings);
+    summary.integrationApi = true;
+    return summary;
+}
 async function queryUnifiStatus() {
     const settings = safeUnifiSettings(storedUnifiSettings());
-    if (!settings.url || !settings.username || !settings.password) {
+    const useKey = settings.authMethod === 'apikey' && !!settings.apiKey;
+    if (!settings.url || (!useKey && (!settings.username || !settings.password))) {
         return {
             configured: false,
             expected: { gateway: 1, switches: 5, aps: 3 },
@@ -707,6 +750,11 @@ async function queryUnifiStatus() {
     }
     const now = Date.now();
     try {
+        if (useKey) {   // official Integration API path (X-API-KEY) — reads only, fewer stats, no LED
+            const summary = await unifiFetchIntegration(settings);
+            _unifiLastGood = summary; _unifiLastGoodAt = now;
+            return summary;
+        }
         // Reuse the cached session if it is still fresh; otherwise log in.
         if (!_unifiCookies || (now - _unifiCookieAt) > UNIFI_COOKIE_TTL) {
             const lg = await unifiLogin(settings);
@@ -2914,7 +2962,8 @@ const server = http.createServer(async (req, res) => {
         const settings = readDashboardSettings();
         if (settings.unifiControl !== true) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'Device control is off. Enable it on the Networking page.' })); return; }
         const uni = storedUnifiSettings();
-        if (!uni.url || !uni.username || !uni.password) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'UniFi is not configured.' })); return; }
+        if (!uni.url) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'UniFi is not configured.' })); return; }
+        if (!uni.username || !uni.password) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: "LED and locate control need username & password auth — the API key uses UniFi's Integration API, which can't control LEDs." })); return; }
         const payload = await readJsonBody(req);
         const action = String(payload.action || '');
         const cmd = { action };
@@ -3849,4 +3898,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl, isPrivateHostname, tlsRelaxedFor, describeNetErr, storedCredential };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl, isPrivateHostname, tlsRelaxedFor, describeNetErr, storedCredential, summarizeUnifi, unifiDeviceKind, summarizeUnifiDevice };
