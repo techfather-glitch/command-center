@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.12] — 2026-07-17
+
+### Changed
+- **Weather moved off the tile grid into a clean top-right chip.** Instead of a dashboard tile, current
+  conditions now sit where you'd expect them — a compact chip in the top-right: in the header on every
+  page, and at the top of Home on desktop (where the header gives way to the hero). At a glance it shows
+  the sky condition and current temperature; click it for feels-like, today's high/low, humidity, wind and
+  your location, plus a one-tap **°C/°F** switch (remembered per device).
+
+### Added
+- Weather now reads the actual sky condition (WMO code → icon with day/night variants + label), pulled
+  alongside the readings it already fetched — no extra API calls.
+
 ## [2.9.11] — 2026-07-17
 
 ### Added

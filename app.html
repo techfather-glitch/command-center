@@ -829,6 +829,35 @@
     .ico-btn svg { width: 18px; height: 18px; }
     .ico-btn .spin { animation: hl-spin .7s linear; }
     @keyframes hl-spin { to { transform: rotate(360deg); } }
+    /* ── Weather chip (top-right) + shared detail popover ── */
+    .wx-chip { display: none; align-items: center; gap: var(--s-2); height: 32px; padding: 0 var(--s-3);
+        background: var(--bg-1); border: 1px solid var(--line-1); border-radius: var(--r-input); color: var(--text-2); cursor: pointer;
+        font: var(--fw-body) var(--fs-cap) var(--font); white-space: nowrap; transition: border-color var(--t-micro) var(--ease), color var(--t-micro) var(--ease); }
+    .wx-chip.show { display: inline-flex; }
+    .wx-chip:hover { border-color: var(--line-2); color: var(--text-1); }
+    .wx-chip .wx-ico { font-size: 15px; line-height: 1; }
+    .wx-chip .wx-temp { font-weight: 600; color: var(--text-1); font-feature-settings: var(--tnum); }
+    .wx-chip .wx-cond { color: var(--text-3); }
+    @media (max-width: 600px) { .wx-chip .wx-cond { display: none; } }
+    .home-wxrow { display: flex; justify-content: flex-end; margin-bottom: var(--s-3); }
+    @media (max-width: 900px) { .home-wxrow { display: none; } }   /* topbar chip covers mobile — avoid a duplicate */
+    .wx-hero { height: 34px; }
+    .wx-pop { position: fixed; z-index: 1200; min-width: 232px; max-width: 288px;
+        background: var(--bg-0); border: 1px solid var(--line-1); border-radius: 14px; padding: 14px 16px; box-shadow: 0 16px 40px rgba(0,0,0,0.32); }
+    .wx-pop[hidden] { display: none; }
+    .wx-pop-main { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .wx-pop-ico { font-size: 34px; line-height: 1; }
+    .wx-pop-temp { font-size: 28px; font-weight: 600; color: var(--text-1); line-height: 1.05; font-feature-settings: var(--tnum); }
+    .wx-pop-cond { font: var(--fw-body) var(--fs-cap) var(--font); color: var(--text-3); margin-top: 2px; }
+    .wx-pop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 18px; }
+    .wx-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font: var(--fw-body) var(--fs-cap) var(--font); }
+    .wx-row span { color: var(--text-3); }
+    .wx-row b { color: var(--text-1); font-weight: 600; font-feature-settings: var(--tnum); }
+    .wx-pop-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line-1); }
+    .wx-pop-foot > span { font: var(--fw-body) var(--fs-cap) var(--font); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wx-unit { flex: none; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--line-1); background: transparent; color: var(--text-2);
+        font: var(--fw-body) var(--fs-cap) var(--font); cursor: pointer; transition: border-color var(--t-micro) var(--ease), color var(--t-micro) var(--ease); }
+    .wx-unit:hover { border-color: var(--line-2); color: var(--text-1); }
     .notif-dot { position: absolute; top: 7px; right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--warning); display: none; box-shadow: 0 0 0 2px var(--bg-0); }
     .notif-dot.crit { background: var(--critical); }
     .notif-dot.show { display: block; }
@@ -2332,11 +2361,13 @@
         <div class="topbar-crumb" id="topbarCrumb" role="heading" aria-level="1">Home</div>
         <button class="verdict-pill" id="verdictPill" onclick="location.hash='#/alerts'" title="System status"><span class="vdot"></span><span id="verdictText">Checking…</span></button>
         <div class="topbar-right">
+            <button class="wx-chip wx-top" id="wxTop" onclick="wxOpen(event)" aria-label="Weather" title="Weather"></button>
             <span class="conn-badge" id="connBadge" role="status" aria-live="polite" hidden><span class="conn-dot"></span><span id="connTxt"></span></span>
             <button class="cmdk-hint" onclick="openPalette()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span>Search</span><kbd>⌘K</kbd></button>
             <button class="ico-btn" id="topRefresh" onclick="this.querySelector('svg').classList.remove('spin');void this.offsetWidth;this.querySelector('svg').classList.add('spin');manualRefresh()" title="Refresh now" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>
         </div>
     </header>
+    <div class="wx-pop" id="wxPop" role="dialog" aria-label="Weather detail" hidden></div>
     <main class="view" id="view"></main>
     <nav class="botnav" id="botnav" aria-label="Primary"></nav>
     <div class="botsheet-back" id="botsheetBack" onclick="closeMore()"></div>
@@ -2883,7 +2914,7 @@ async function refreshCore() {
     // don't block the meaningful content on the slow Node Exporter /metrics fetch.
     await refreshStatus();
     if (Store.lastUpdate && !isEditingView() && !_dragKey) { _verdict = null; render(); updateFoot(); }
-    await Promise.all([refreshHost(), refreshUnifi()]);   // KPIs (CPU/RAM), WAN — fill in after
+    await Promise.all([refreshHost(), refreshUnifi(), refreshWeather()]);   // KPIs (CPU/RAM), WAN, weather chip — fill in after
 }
 async function refreshRoute(r) {
     r = r || route;
@@ -2967,7 +2998,7 @@ const Live = {
    20s history ring + repaint. status/host/media stay owned by the stream. */
 async function reducedTick() {
     _verdict = null;
-    await refreshUnifi();
+    await Promise.all([refreshUnifi(), refreshWeather()]);   // weather chip stays fresh on every route (throttled)
     await refreshRoute();
     pushHistory();
     if (!uiInteracting()) render();
@@ -3257,7 +3288,86 @@ function renderTopbar() {
         if (!ap.dataset.init) { ap.dataset.init = '1'; ap.innerHTML = Object.keys(THEMES).map(id => `<button class="accent-dot" data-acc="${id}" title="${THEMES[id].name} accent" style="background:${THEMES[id].accent};color:${THEMES[id].accent}" onclick="setTheme('${id}')"></button>`).join(''); }
         const cur = currentTheme(); ap.querySelectorAll('.accent-dot').forEach(d => d.classList.toggle('on', d.dataset.acc === cur));
     }
+    renderWxChip();
     renderConnBadge();
+}
+/* ── Weather: a persistent top-right chip (+ desktop-dashboard strip), not a tile ──
+   One enabled Weather integration feeds both mounts; details live in a shared popover.
+   Units (°C/°F) are a per-device display choice, so they live in localStorage. */
+function weatherInstance() { return enabledIntegrations().find(d => (d.baseType || d.id) === 'weather') || null; }
+function weatherWx() { const def = weatherInstance(); const w = def && Store.widgets[def.id]; return (w && w.wx) || null; }
+function wxUnit() { try { return localStorage.getItem('cc-wx-unit') === 'f' ? 'f' : 'c'; } catch (e) { return 'c'; } }
+function wxT(c) { if (c == null) return '—'; return Math.round(wxUnit() === 'f' ? c * 9 / 5 + 32 : c) + '°'; }
+function wxWind(kmh) { if (kmh == null) return '—'; return wxUnit() === 'f' ? Math.round(kmh / 1.609) + ' mph' : Math.round(kmh) + ' km/h'; }
+/* WMO weather codes → [label, emoji]; clear/partly get a night variant when is_day===0 */
+function wxDesc(code, isDay) {
+    const day = isDay == null ? 1 : isDay;
+    const m = {
+        0: ['Clear', day ? '☀️' : '🌙'], 1: ['Mainly clear', day ? '🌤️' : '🌙'], 2: ['Partly cloudy', day ? '⛅' : '☁️'], 3: ['Overcast', '☁️'],
+        45: ['Fog', '🌫️'], 48: ['Rime fog', '🌫️'],
+        51: ['Light drizzle', '🌦️'], 53: ['Drizzle', '🌦️'], 55: ['Heavy drizzle', '🌦️'], 56: ['Freezing drizzle', '🌨️'], 57: ['Freezing drizzle', '🌨️'],
+        61: ['Light rain', '🌦️'], 63: ['Rain', '🌧️'], 65: ['Heavy rain', '🌧️'], 66: ['Freezing rain', '🌧️'], 67: ['Freezing rain', '🌧️'],
+        71: ['Light snow', '🌨️'], 73: ['Snow', '❄️'], 75: ['Heavy snow', '❄️'], 77: ['Snow grains', '🌨️'],
+        80: ['Light showers', '🌦️'], 81: ['Showers', '🌧️'], 82: ['Heavy showers', '🌧️'], 85: ['Snow showers', '🌨️'], 86: ['Snow showers', '🌨️'],
+        95: ['Thunderstorm', '⛈️'], 96: ['Thunderstorm', '⛈️'], 99: ['Thunderstorm', '⛈️']
+    };
+    return m[code] || ['—', '🌡️'];
+}
+function wxInner(wx) { const dd = wxDesc(wx.code, wx.isDay); return `<span class="wx-ico">${dd[1]}</span><span class="wx-temp">${wxT(wx.temp)}</span><span class="wx-cond">${esc(dd[0])}</span>`; }
+function wxLoc() { const def = weatherInstance(); return def && def.title ? String(def.title).replace(/^weather\s*[—:–-]?\s*/i, '').trim() : ''; }
+/* Desktop-dashboard strip (topbar is hidden there); CSS hides it under 901px so it never
+   duplicates the topbar chip on mobile. */
+function homeWeather() { const wx = weatherWx(); if (!wx || wx.temp == null) return ''; return `<div class="home-wxrow"><button class="wx-chip wx-hero show" onclick="wxOpen(event)" aria-label="Weather details">${wxInner(wx)}</button></div>`; }
+function renderWxChip() {
+    const el = document.getElementById('wxTop'); if (!el) return;
+    const wx = weatherWx();
+    if (!wx || wx.temp == null) { el.classList.remove('show'); el.innerHTML = ''; return; }
+    el.innerHTML = wxInner(wx); el.classList.add('show');
+    const dd = wxDesc(wx.code, wx.isDay);
+    el.title = `${dd[0]} · feels ${wxT(wx.feels)} · H ${wxT(wx.high)} / L ${wxT(wx.low)}`;
+}
+function wxPopHtml() {
+    const wx = weatherWx(); if (!wx) return '';
+    const dd = wxDesc(wx.code, wx.isDay), loc = wxLoc();
+    const row = (l, v) => `<div class="wx-row"><span>${l}</span><b>${v}</b></div>`;
+    return `<div class="wx-pop-main"><span class="wx-pop-ico">${dd[1]}</span><div><div class="wx-pop-temp">${wxT(wx.temp)}</div><div class="wx-pop-cond">${esc(dd[0])}</div></div></div>`
+        + `<div class="wx-pop-grid">${row('Feels', wxT(wx.feels))}${row('High', wxT(wx.high))}${row('Low', wxT(wx.low))}${row('Humidity', wx.humidity != null ? Math.round(wx.humidity) + '%' : '—')}${row('Wind', wxWind(wx.wind))}</div>`
+        + `<div class="wx-pop-foot"><span>${loc ? esc(loc) : ''}</span><button class="wx-unit" onclick="toggleWxUnit(event)">Switch to °${wxUnit() === 'f' ? 'C' : 'F'}</button></div>`;
+}
+let _wxPopOpen = false;
+window.wxOpen = function (e) {
+    if (e) e.stopPropagation();
+    const pop = document.getElementById('wxPop'); if (!pop) return;
+    if (_wxPopOpen) { closeWxPop(); return; }
+    const html = wxPopHtml(); if (!html) return;
+    pop.innerHTML = html; pop.hidden = false; _wxPopOpen = true;
+    positionWxPop(e && e.currentTarget);
+    setTimeout(() => { document.addEventListener('click', wxOutside); document.addEventListener('keydown', wxKey); window.addEventListener('scroll', closeWxPop, true); window.addEventListener('resize', closeWxPop); }, 0);
+};
+function positionWxPop(chip) {
+    const pop = document.getElementById('wxPop'); if (!pop) return;
+    let top = 60, right = 16;
+    if (chip && chip.getBoundingClientRect) { const r = chip.getBoundingClientRect(); top = Math.round(r.bottom + 8); right = Math.max(8, Math.round(window.innerWidth - r.right)); }
+    pop.style.top = top + 'px'; pop.style.right = right + 'px'; pop.style.left = 'auto';
+}
+function closeWxPop() { const pop = document.getElementById('wxPop'); if (pop) pop.hidden = true; _wxPopOpen = false; document.removeEventListener('click', wxOutside); document.removeEventListener('keydown', wxKey); window.removeEventListener('scroll', closeWxPop, true); window.removeEventListener('resize', closeWxPop); }
+function wxOutside(e) { const pop = document.getElementById('wxPop'); if (pop && !pop.contains(e.target) && !(e.target.closest && e.target.closest('.wx-chip'))) closeWxPop(); }
+function wxKey(e) { if (e.key === 'Escape') closeWxPop(); }
+window.toggleWxUnit = function (e) {
+    if (e) e.stopPropagation();
+    const u = wxUnit() === 'f' ? 'c' : 'f'; try { localStorage.setItem('cc-wx-unit', u); } catch (err) {}
+    renderWxChip();
+    const wx = weatherWx(); const hero = document.querySelector('.wx-hero'); if (hero && wx) hero.innerHTML = wxInner(wx);
+    const pop = document.getElementById('wxPop'); if (pop && !pop.hidden) pop.innerHTML = wxPopHtml();
+};
+let _wxAt = 0;
+async function refreshWeather() {
+    const def = weatherInstance(); if (!def) return;
+    const now = Date.now();
+    if (now - _wxAt < 600000 && Store.widgets[def.id] && Store.widgets[def.id].wx) return;   // 10-min client throttle; server caches 15 min
+    _wxAt = now;
+    await refreshWidget(def.id);
+    renderWxChip();
 }
 window.toggleRail = function () { const r = document.getElementById('rail'); const on = r.getAttribute('data-collapsed') === 'true'; r.setAttribute('data-collapsed', on ? 'false' : 'true'); try { localStorage.setItem('hl-rail', on ? '0' : '1'); } catch (e) {} };
 window.toggleDock = function () { const d = document.getElementById('dock'); d.setAttribute('data-open', d.getAttribute('data-open') === 'true' ? 'false' : 'true'); };
@@ -3536,7 +3646,7 @@ function renderCustomTile(t) {
 }
 function tileOrder() { return (Store.settings && Array.isArray(Store.settings.tileOrder)) ? Store.settings.tileOrder : []; }
 function orderedTiles() {
-    const en = enabledIntegrations().map(d => ({ key: 'ig:' + d.id, kind: 'ig', def: d }));
+    const en = enabledIntegrations().filter(d => (d.baseType || d.id) !== 'weather').map(d => ({ key: 'ig:' + d.id, kind: 'ig', def: d }));   // weather lives in the top-right chip, not the tile grid
     const cts = customTiles().map(t => ({ key: 'ct:' + t.id, kind: 'ct', tile: t }));
     const all = en.concat(cts);
     const order = tileOrder();
@@ -3646,6 +3756,7 @@ PAGES.dashboard = function () {
     const v = computeVerdict();
     if (v.state === 'welcome') return homeWelcome();
     return `<div class="home-view">
+        ${homeWeather()}
         ${deckVitals(v)}
         ${deckAttention(v)}
         ${deckLiveBand()}
