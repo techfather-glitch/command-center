@@ -5562,7 +5562,19 @@ window.unifiLed = async function (params, btn) {
     catch (e) { toast('Failed: ' + e.message); return false; }
     finally { if (btn) btn.classList.remove('busy'); }
 };
-window.unifiLocate = async function (btn, mac) { const on = !btn.classList.contains('on'); if (await window.unifiLed({ action: 'locate', mac: mac, on: on }, btn)) btn.classList.toggle('on', on); };
+// Locate is a toggle, but its on/off state must survive the 20s re-render — otherwise a
+// rebuilt button forgets it's locating and the next click sends another set-locate (the
+// LED then blinks forever). Track it per-MAC, and auto-stop after 2 min as a safety net.
+let _uniLocating = {}, _uniLocateTimers = {};
+function paintLocate(mac) { document.querySelectorAll('.uctl-btn[data-loc="' + mac + '"]').forEach(b => { b.classList.toggle('on', !!_uniLocating[mac]); b.textContent = _uniLocating[mac] ? 'Stop' : 'Locate'; }); }
+window.unifiLocate = async function (btn, mac) {
+    const on = !_uniLocating[mac];
+    if (!(await window.unifiLed({ action: 'locate', mac: mac, on: on }, btn))) return;
+    _uniLocating[mac] = on;
+    if (_uniLocateTimers[mac]) { clearTimeout(_uniLocateTimers[mac]); delete _uniLocateTimers[mac]; }
+    paintLocate(mac);
+    if (on) _uniLocateTimers[mac] = setTimeout(async () => { delete _uniLocateTimers[mac]; _uniLocating[mac] = false; try { await window.unifiLed({ action: 'locate', mac: mac, on: false }); } catch (e) {} paintLocate(mac); }, 120000);
+};
 window.unifiLedMode = async function (btn, id, mode) { if (await window.unifiLed({ action: 'led', id: id, mode: mode }, btn)) { const seg = btn.parentElement; if (seg) seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn)); } };
 window.unifiLedColor = async function (btn, id) { const row = btn.closest('.uctl-row'); if (!row) return; const color = row.querySelector('.uctl-color').value; const brightness = Number(row.querySelector('.uctl-bri').value) || 100; await window.unifiLed({ action: 'led', id: id, color: color, brightness: brightness }, btn); };
 function netDeviceControl() {
@@ -5577,7 +5589,7 @@ function netDeviceControl() {
         return `<div class="uctl-row" data-id="${esc(d.id || '')}">
             <div class="uctl-id">${deviceIcon(d, 22)}<div><div class="uctl-name">${esc(d.name || d.model)}</div><div class="uctl-sub"><span class="dot ${d.online ? 'good' : 'bad'}"></span>${esc(d.model || '')}</div></div></div>
             <div class="uctl-actions">
-                <button class="uctl-btn" ${d.mac ? '' : 'disabled'} onclick="unifiLocate(this,'${esc(d.mac || '')}')" title="Blink the LED to find this device">Locate</button>
+                <button class="uctl-btn${_uniLocating[d.mac] ? ' on' : ''}" data-loc="${esc(d.mac || '')}" ${d.mac ? '' : 'disabled'} onclick="unifiLocate(this,'${esc(d.mac || '')}')" title="Blink the LED to find this device (click again to stop)">${_uniLocating[d.mac] ? 'Stop' : 'Locate'}</button>
                 <span class="uctl-seg">${['on', 'off', 'default'].map(m => `<button class="${led === m ? 'on' : ''}" ${d.id ? '' : 'disabled'} onclick="unifiLedMode(this,'${esc(d.id || '')}','${m}')">${m === 'default' ? 'Auto' : m === 'on' ? 'On' : 'Off'}</button>`).join('')}</span>
                 <input type="color" class="uctl-color" value="${esc(color)}" title="LED color (RGB-capable devices)">
                 <input type="range" class="uctl-bri" min="0" max="100" value="${bri}" title="LED brightness">

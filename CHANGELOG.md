@@ -4,6 +4,20 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.17] — 2026-07-17
+
+### Fixed
+- **UniFi Locate no longer gets stuck blinking.** The button's on/off state lived only in the button, so
+  the 20-second auto-refresh rebuilt it "off" — and the next click sent another *start*-locate instead of
+  *stop*, leaving the LED flashing until you stopped it in the UniFi app. Locate is now a proper toggle
+  that survives refreshes (the button reads **Stop** while active) and auto-stops after 2 minutes as a
+  safety net.
+
+### Added
+- **qui shows real torrent activity, not just "instances up".** The tile now aggregates across your
+  connected qBittorrent instances — total torrents, downloading, seeding, paused, errored, and live
+  down/up speed — pulled from each instance's stats (one lightweight call apiece).
+
 ## [2.9.16] — 2026-07-17
 
 ### Added
