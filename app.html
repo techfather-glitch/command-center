@@ -683,6 +683,27 @@
     .hb-tray-lbl { font-size: 12px; color: var(--faint); }
     .hb-tray-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--hair-2); background: var(--s1); color: var(--muted); cursor: pointer; }
     .hb-tray-chip:hover { color: var(--text); border-color: var(--accent); }
+    /* ── UniFi device control lane ── */
+    .uctl-switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); cursor: pointer; }
+    .uctl-switch input { accent-color: var(--live); }
+    .uctl-list { display: flex; flex-direction: column; gap: 4px; }
+    .uctl-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 9px 4px; border-bottom: 1px solid var(--hair); }
+    .uctl-row:last-child { border-bottom: 0; }
+    .uctl-id { display: flex; align-items: center; gap: 9px; min-width: 170px; flex: 1 1 170px; }
+    .uctl-name { font-size: 13px; color: var(--text-1); font-weight: 500; }
+    .uctl-sub { font-size: 11px; color: var(--faint); display: flex; align-items: center; gap: 5px; }
+    .uctl-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .uctl-btn { height: 28px; padding: 0 11px; border-radius: 7px; border: 1px solid var(--hair-2); background: var(--s1); color: var(--muted); font-size: 12px; cursor: pointer; transition: color var(--t-micro) var(--ease), border-color var(--t-micro) var(--ease); }
+    .uctl-btn:hover { color: var(--text-1); border-color: var(--line-2); }
+    .uctl-btn.on { color: #06231f; background: var(--live); border-color: var(--live); }
+    .uctl-btn.busy { opacity: .55; pointer-events: none; }
+    .uctl-seg { display: inline-flex; border: 1px solid var(--hair-2); border-radius: 7px; overflow: hidden; }
+    .uctl-seg button { height: 28px; padding: 0 10px; border: 0; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; border-right: 1px solid var(--hair-2); }
+    .uctl-seg button:last-child { border-right: 0; }
+    .uctl-seg button.on { color: #06231f; background: var(--live); }
+    .uctl-color { width: 30px; height: 28px; padding: 0; border: 1px solid var(--hair-2); border-radius: 7px; background: transparent; cursor: pointer; }
+    .uctl-bri { width: 80px; accent-color: var(--live); }
+    .uctl-note { font-size: 11px; color: var(--faint); margin-top: 10px; }
     .hb-reset { color: var(--faint); }
     @media (max-width: 600px) { .home-board { grid-template-columns: 1fr; } .home-board .hb-block { grid-column: 1 / -1 !important; } .hb-resize { display: none; } }
     .ig-card { padding: 16px; }
@@ -5527,6 +5548,42 @@ function clientRow(c) {
     const bandTxt = c.wired ? 'wired' : [(c.radio || '').toString().toUpperCase().replace('NG', '2.4G').replace('NA', '5G'), c.channel ? 'ch' + c.channel : ''].filter(Boolean).join(' ');
     return `<div class="crow" title="${esc(c.name || c.ip || 'client')}"><span class="cx-name"><b>${esc(c.name || c.hostname || c.ip || 'client')}</b><i class="cx-ip">${esc(c.ip || '')}</i>${c.vendor ? `<i class="cx-vendor">${esc(c.vendor)}</i>` : ''}</span>${signalBars(c)}<span class="cx-band">${esc(bandTxt || '—')}</span><span class="cx-uplink">${esc(c.uplink || '')}</span><span class="cx-thru"><em class="dl">${fmtThru(c.rxRate)}</em> <em class="ul">/ ${fmtThru(c.txRate)}</em></span></div>`;
 }
+/* ── UniFi device control — LED override + flash-to-locate. Opt-in: every command is
+   gated behind settings.unifiControl (a UI toggle) and sent server-side with the saved
+   controller login. Nothing is written unless the user turns the switch on. ── */
+function unifiControlEnabled() { return !!(Store.settings && Store.settings.unifiControl); }
+function unifiDevicesAll() { const u = Store.unifi || {}; return [].concat((u.gateway && u.gateway.devices) || [], (u.switches && u.switches.devices) || [], (u.aps && u.aps.devices) || []); }
+window.toggleUnifiControl = async function () { const on = !unifiControlEnabled(); Store.settings = Object.assign({}, Store.settings, { unifiControl: on }); render(); await saveSettings({ unifiControl: on }, on ? 'Device control enabled' : 'Device control disabled'); };
+window.unifiLed = async function (params, btn) {
+    try { if (btn) btn.classList.add('busy'); const r = await jpost('/api/unifi/led', params); if (!r || !r.ok) { toast('Failed: ' + ((r && r.error) || 'error')); return false; } toast('Sent ✓'); return true; }
+    catch (e) { toast('Failed: ' + e.message); return false; }
+    finally { if (btn) btn.classList.remove('busy'); }
+};
+window.unifiLocate = async function (btn, mac) { const on = !btn.classList.contains('on'); if (await window.unifiLed({ action: 'locate', mac: mac, on: on }, btn)) btn.classList.toggle('on', on); };
+window.unifiLedMode = async function (btn, id, mode) { if (await window.unifiLed({ action: 'led', id: id, mode: mode }, btn)) { const seg = btn.parentElement; if (seg) seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn)); } };
+window.unifiLedColor = async function (btn, id) { const row = btn.closest('.uctl-row'); if (!row) return; const color = row.querySelector('.uctl-color').value; const brightness = Number(row.querySelector('.uctl-bri').value) || 100; await window.unifiLed({ action: 'led', id: id, color: color, brightness: brightness }, btn); };
+function netDeviceControl() {
+    const devs = unifiDevicesAll(); if (!devs.length) return '';
+    const on = unifiControlEnabled();
+    const head = `<div class="lane-head"><span class="eyebrow">Device control</span><span class="lane-meta"><label class="uctl-switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="toggleUnifiControl()"> Allow LED &amp; locate</label></span></div>`;
+    if (!on) return `<section class="lane">${head}<hr class="hair"><div class="lane-body"><div class="uctl-note" style="font-size:12px;color:var(--muted)">Turn this on to flash a device's LED to find it, switch its LED on or off, or set a color. Commands are sent to your UniFi controller with your saved login — nothing is written unless you flip this switch.</div></div></section>`;
+    const rows = devs.map(d => {
+        const led = (d.led && d.led.override) || 'default';
+        const color = (d.led && d.led.color) || '#2dd4bf';
+        const bri = (d.led && d.led.brightness != null) ? d.led.brightness : 100;
+        return `<div class="uctl-row" data-id="${esc(d.id || '')}">
+            <div class="uctl-id">${deviceIcon(d, 22)}<div><div class="uctl-name">${esc(d.name || d.model)}</div><div class="uctl-sub"><span class="dot ${d.online ? 'good' : 'bad'}"></span>${esc(d.model || '')}</div></div></div>
+            <div class="uctl-actions">
+                <button class="uctl-btn" ${d.mac ? '' : 'disabled'} onclick="unifiLocate(this,'${esc(d.mac || '')}')" title="Blink the LED to find this device">Locate</button>
+                <span class="uctl-seg">${['on', 'off', 'default'].map(m => `<button class="${led === m ? 'on' : ''}" ${d.id ? '' : 'disabled'} onclick="unifiLedMode(this,'${esc(d.id || '')}','${m}')">${m === 'default' ? 'Auto' : m === 'on' ? 'On' : 'Off'}</button>`).join('')}</span>
+                <input type="color" class="uctl-color" value="${esc(color)}" title="LED color (RGB-capable devices)">
+                <input type="range" class="uctl-bri" min="0" max="100" value="${bri}" title="LED brightness">
+                <button class="uctl-btn" ${d.id ? '' : 'disabled'} onclick="unifiLedColor(this,'${esc(d.id || '')}')">Apply color</button>
+            </div>
+        </div>`;
+    }).join('');
+    return `<section class="lane">${head}<hr class="hair"><div class="lane-body uctl-list">${rows}</div><div class="uctl-note">Color and brightness apply only to devices with RGB LEDs; every device accepts Locate and On / Off / Auto.</div></section>`;
+}
 PAGES.networking = function () {
     const u = Store.unifi;
     if (!u) return `<section class="lane"><div class="lane-head"><span class="eyebrow">Network</span></div><hr class="hair"><div class="lane-body"><div class="g-skel" style="height:120px"></div></div></section>`;
@@ -5590,6 +5647,7 @@ PAGES.networking = function () {
             }</div>
         </div>
         ${netInsights(sortedClients, aps)}
+        ${netDeviceControl()}
     </div>`;
 };
 /* — client intelligence instead of a 60-row wall: top talkers, needs-a-look, AP health,

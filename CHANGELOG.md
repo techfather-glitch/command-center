@@ -4,6 +4,21 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.15] — 2026-07-17
+
+### Added
+- **UniFi device control (opt-in).** The Networking page has a new **Device control** panel with a master
+  switch — **off by default**. Turn it on and every UniFi device gets controls: **Locate** (blink its LED
+  to find it), **LED On / Off / Auto**, and a **color + brightness** picker for devices with RGB LEDs.
+  Commands are sent server-side using your saved controller login; nothing is ever written unless you flip
+  the switch, and the switch is remembered. This is the UniFi integration's first *write* capability —
+  everything else stays read-only.
+
+### Notes
+- Works with both UniFi OS (UDM / Cloud Key gen2+, via the CSRF-token'd proxy API) and legacy self-hosted
+  controllers. Color and brightness apply only to devices with RGB status LEDs; all devices accept Locate
+  and On/Off/Auto. If the UniFi account you configured is read-only, control commands report "unauthorized".
+
 ## [2.9.14] — 2026-07-17
 
 ### Changed

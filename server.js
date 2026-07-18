@@ -319,7 +319,7 @@ function injectDashboardSettings(html) {
     return html.replace('</head>', () => `${script}\n</head>`);
 }
 
-function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cookies = '' } = {}) {
+function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cookies = '', csrf = '' } = {}) {
     return new Promise((resolve, reject) => {
         let target;
         try { target = new URL(requestPath, baseUrl); } catch (err) { reject(err); return; }
@@ -331,6 +331,7 @@ function unifiRequest(baseUrl, requestPath, { method = 'GET', body = null, cooki
             'User-Agent': 'command-center/2.0'
         };
         if (cookies) headers.Cookie = cookies;
+        if (csrf) headers['X-CSRF-Token'] = csrf;   // UniFi OS requires this on write (POST/PUT) calls
         if (payload) headers['Content-Length'] = Buffer.byteLength(payload);
         // UniFi controllers ship with a self-signed certificate, so strict TLS
         // verification would break virtually every real controller out of the
@@ -443,7 +444,9 @@ function summarizeUnifiDevice(d) {
         name: unifiDeviceName(d),
         model: d.model || d.type || 'unknown',
         kind,
+        id: d._id || d.device_id || '',
         mac: d.mac,
+        led: { override: d.led_override || 'default', color: d.led_override_color || '', brightness: numberOrNull(d.led_override_color_brightness) },
         ip: d.ip || d.ip_addr || d.gateway_ip,
         online,
         version: d.displayable_version || d.version || d.fw_version,
@@ -578,6 +581,21 @@ function pushWanHist(rate) { const n = Number(rate); if (!isFinite(n)) return; c
 const UNIFI_COOKIE_TTL = 25 * 60 * 1000;   // reuse a session for 25 minutes
 const UNIFI_STALE_OK   = 6 * 60 * 1000;    // serve last-good data up to 6 min during a blip
 
+// UniFi OS returns a CSRF token needed for write calls — as a response header on some
+// versions, or embedded in the TOKEN cookie's JWT payload on others. Try both.
+function unifiCsrfFrom(resp) {
+    const h = resp && resp.headers && (resp.headers['x-csrf-token'] || resp.headers['x-updated-csrf-token']);
+    if (h) return String(h);
+    try {
+        const tok = (resp.cookies || []).map(c => String(c)).find(c => /^TOKEN=/.test(c));
+        if (tok) {
+            const jwt = tok.split(';')[0].split('=')[1] || '';
+            const payload = jwt.split('.')[1];
+            if (payload) { const j = JSON.parse(Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')); return j.csrfToken || ''; }
+        }
+    } catch (e) { /* not a JWT session (legacy controller) — no CSRF needed */ }
+    return '';
+}
 async function unifiLogin(settings) {
     const loginBodies = [
         { username: settings.username, password: settings.password, rememberMe: true },
@@ -592,7 +610,7 @@ async function unifiLogin(settings) {
                 loginStatus = resp.status;
                 if (resp.status >= 200 && resp.status < 300) {
                     const cookies = joinCookies(resp.cookies);
-                    if (cookies) return { cookies };
+                    if (cookies) return { cookies, csrf: unifiCsrfFrom(resp) };
                 } else {
                     loginError = typeof resp.body === 'string' ? resp.body : (resp.body?.meta?.msg || resp.body?.error || `login ${resp.status}`);
                 }
@@ -609,6 +627,39 @@ async function unifiLogin(settings) {
         }
     }
     return { cookies: '', error: loginError || `UniFi login failed (${loginStatus || 'no response'})` };
+}
+
+// Write a control command to the controller (LED override / flash-to-locate). Fresh
+// login per action (user-initiated, infrequent); tries the UniFi OS proxy path first,
+// then the legacy self-hosted path.
+async function unifiControlCmd(settings, cmd) {
+    const login = await unifiLogin(settings);
+    if (!login.cookies) return { ok: false, error: login.error || 'UniFi login failed' };
+    const site = encodeURIComponent(settings.site || 'default');
+    let method, paths, body;
+    if (cmd.action === 'locate') {
+        method = 'POST';
+        paths = [`/proxy/network/api/s/${site}/cmd/devmgr`, `/api/s/${site}/cmd/devmgr`];
+        body = { cmd: cmd.on ? 'set-locate' : 'unset-locate', mac: cmd.mac };
+    } else if (cmd.action === 'led') {
+        method = 'PUT';
+        const id = encodeURIComponent(cmd.id);
+        paths = [`/proxy/network/api/s/${site}/rest/device/${id}`, `/api/s/${site}/rest/device/${id}`];
+        body = {};
+        if (cmd.mode) body.led_override = cmd.mode;
+        if (cmd.color) { body.led_override_color = cmd.color; body.led_override = 'on'; }
+        if (cmd.brightness != null) body.led_override_color_brightness = cmd.brightness;
+    } else return { ok: false, error: 'unknown action' };
+    let last = '';
+    for (const p of paths) {
+        try {
+            const r = await unifiRequest(settings.url, p, { method, body, cookies: login.cookies, csrf: login.csrf });
+            if (r.status === 401 || r.status === 403) { last = 'unauthorized (' + r.status + ') — the UniFi account may be read-only'; continue; }
+            if (r.status >= 200 && r.status < 300) return { ok: true };
+            last = (r.body && r.body.meta && r.body.meta.msg) || ('controller HTTP ' + r.status);
+        } catch (e) { last = describeNetErr(e, settings.url); }
+    }
+    return { ok: false, error: last || 'command failed' };
 }
 
 async function unifiFetchData(settings, cookies) {
@@ -2857,6 +2908,37 @@ const server = http.createServer(async (req, res) => {
         } catch (err) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ configured: true, ok: false, error: err.message || 'UniFi status unavailable', alerts: ['UniFi status unavailable.'] }));
+        }
+    } else if (req.url === '/api/unifi/led' && req.method === 'POST') {
+        // Device control (LED override / flash-to-locate). Off unless the user opted in.
+        const settings = readDashboardSettings();
+        if (settings.unifiControl !== true) { res.writeHead(403, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'Device control is off. Enable it on the Networking page.' })); return; }
+        const uni = storedUnifiSettings();
+        if (!uni.url || !uni.username || !uni.password) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'UniFi is not configured.' })); return; }
+        const payload = await readJsonBody(req);
+        const action = String(payload.action || '');
+        const cmd = { action };
+        if (action === 'locate') {
+            cmd.mac = String(payload.mac || '');
+            cmd.on = payload.on !== false;
+            if (!/^[0-9a-f:]{12,17}$/i.test(cmd.mac)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid mac' })); return; }
+        } else if (action === 'led') {
+            cmd.id = String(payload.id || '');
+            if (payload.mode) cmd.mode = ['on', 'off', 'default'].includes(String(payload.mode)) ? String(payload.mode) : 'default';
+            if (payload.color && /^#[0-9a-f]{6}$/i.test(String(payload.color))) cmd.color = String(payload.color);
+            if (payload.brightness != null) cmd.brightness = Math.max(0, Math.min(100, Math.round(Number(payload.brightness)) || 0));
+            if (!cmd.id) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid device id' })); return; }
+            if (!cmd.mode && !cmd.color && cmd.brightness == null) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'nothing to change' })); return; }
+        } else { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'unknown action' })); return; }
+        try {
+            const r = await unifiControlCmd(uni, cmd);
+            auditLog(req, 'unifi.' + action, cmd.mac || cmd.id || '', r.ok ? 'ok' : 'failed');
+            if (r.ok) { _unifiLastGoodAt = 0; }   // force a fresh status fetch so the new LED state shows
+            res.writeHead(r.ok ? 200 : 502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(r));
+        } catch (err) {
+            res.writeHead(502, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: false, error: err.message || 'command failed' }));
         }
     } else if (req.url === '/api/docker/containers') {
         const host = getDockerHost();
