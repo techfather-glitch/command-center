@@ -825,8 +825,8 @@
     .rail[data-collapsed="true"] { width: 60px; }
     .rail-brand { display: flex; align-items: center; gap: var(--s-3); height: 40px; padding: 0 var(--s-2); }
     .rail-logo { width: 30px; height: 30px; border-radius: 9px; flex: 0 0 auto; display: grid; place-items: center;
-        color: #06231f; background: linear-gradient(140deg, var(--accent), var(--accent-2)); box-shadow: var(--sh-1); }
-    .rail-logo svg { width: 18px; height: 18px; }
+        color: var(--text-1); background: transparent; box-shadow: none; }
+    .rail-logo svg { width: 30px; height: 30px; }
     .rail-wordmark { font: 600 14px/1 var(--font); color: var(--text-1); letter-spacing: -0.01em; white-space: nowrap; }
     .rail-collapse { margin-left: auto; width: 26px; height: 26px; display: grid; place-items: center; background: transparent;
         border: 0; border-radius: var(--r-chip); color: var(--text-3); cursor: pointer; transition: color var(--t-micro) var(--ease), background var(--t-micro) var(--ease); }
@@ -1169,8 +1169,8 @@
     .rail[data-collapsed] { width: auto; }
     .rail-wordmark, .rail-collapse { display: none !important; }
     .rail-brand { justify-content: center; padding: 2px 0 10px; margin: 0; border: 0; }
-    .rail-logo { color: var(--t2); background: none; box-shadow: none; width: 30px; height: 30px; }
-    .rail-logo svg { width: 22px; height: 22px; }
+    .rail-logo { color: var(--text-1); background: none; box-shadow: none; width: 30px; height: 30px; }
+    .rail-logo svg { width: 30px; height: 30px; }
     .rail-nav { padding: 4px 0; gap: 3px; width: 100%; display: flex; flex-direction: column; align-items: center; }
     .rail-sect { display: none; }
     .rail-nav::before, .rail-foot::before { content: ""; display: block; width: 22px; height: 1px; background: var(--hair); margin: 5px auto; }
@@ -1998,8 +1998,8 @@
     .ob-shell { width: 100%; max-width: 480px; padding: 32px 22px; display: flex; flex-direction: column; align-items: center; gap: 20px; }
     .ob-card { width: 100%; background: var(--s1); border: 1px solid var(--hair-2); border-radius: 16px; box-shadow: var(--sh-pop); padding: 26px 26px 22px; }
     .ob-hero { text-align: center; }
-    .ob-logo { width: 52px; height: 52px; margin: 0 auto 14px; border-radius: 14px; background: var(--s2); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 0 1px var(--hair-2); }
-    .ob-logo svg { width: 26px; height: 26px; color: var(--live); }
+    .ob-logo { width: 62px; height: 62px; margin: 0 auto 14px; border-radius: 14px; background: transparent; display: flex; align-items: center; justify-content: center; }
+    .ob-logo svg { width: 58px; height: 58px; color: var(--text-1); }
     .ob-logo.done { background: color-mix(in srgb, var(--ok) 14%, var(--s2)); }
     .ob-title { font: 620 24px var(--mono); color: var(--t1); margin: 0 0 6px; letter-spacing: -.01em; }
     .ob-lead { font: var(--f-read); color: var(--t2); margin: 0 auto; max-width: 360px; line-height: 1.5; }
@@ -2398,7 +2398,7 @@
 <div class="app" id="app">
     <aside class="rail" id="rail" data-collapsed="false">
         <div class="rail-brand">
-            <div class="rail-logo" title="Command Center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12L6 6M12 12L18 6M12 12L6 18M12 12L18 18"/><rect x="9" y="9" width="6" height="6" rx="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="6" cy="18" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="1.7" fill="currentColor" stroke="none"/></svg></div>
+            <div class="rail-logo" title="Command Center"><svg viewBox="0 0 120 120" fill="none"><circle cx="60" cy="60" r="46" stroke="currentColor" stroke-opacity="0.4" stroke-width="4" stroke-dasharray="38 22"/><g stroke="#2DD4BF" stroke-width="6" stroke-linecap="round"><path d="M60 1 V13"/><path d="M119 60 H107"/><path d="M60 119 V107"/><path d="M1 60 H13"/></g><g stroke="currentColor" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"><path d="M57 42 L41 51 L41 69 L57 78"/><path d="M63 42 L79 51 L79 69 L63 78"/></g><circle cx="60" cy="60" r="6.5" fill="#2DD4BF"/></svg></div>
             <span class="rail-wordmark">Command Center</span>
             <button class="rail-collapse" id="railCollapse" onclick="toggleRail()" title="Collapse (Ctrl/Cmd-\)" aria-label="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
         </div>
@@ -3321,10 +3321,13 @@ function computeVerdict() {
     const state = reconnecting ? 'offline' : crit ? 'critical' : items.length ? 'warning' : 'healthy';
     return (_verdict = { state, count: items.length, crit, warn: items.length - crit, items });
 }
-/* The Command Center mark — a central core (the dashboard) linked by four spokes to
-   four nodes: one command center unifying everything around it. currentColor so it
-   reads dark-on-teal in the rail and teal-on-dark on the login/onboard hero. */
-function ccMark() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12L6 6M12 12L18 6M12 12L6 18M12 12L18 18"/><rect x="9" y="9" width="6" height="6" rx="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="6" cy="18" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="1.7" fill="currentColor" stroke="none"/></svg>`; }
+/* The Command Center mark — a targeting reticle around a hexagonal split-C core with a
+   teal locator dot. The reticle rings + hexagon brackets use currentColor (so they read
+   light on a dark theme, dark on a light theme); the ticks, accent arc and dot are the
+   fixed brand teal. ccMark() is the full reticle (hero); ccMarkSm() is a bolder compact
+   cut that still reads at rail/favicon sizes where the thin rings would vanish. */
+function ccMark() { return `<svg viewBox="0 0 120 120" fill="none"><circle cx="60" cy="60" r="48" stroke="currentColor" stroke-opacity="0.3" stroke-width="2.4" stroke-dasharray="44 18"/><circle cx="60" cy="60" r="37" stroke="currentColor" stroke-opacity="0.2" stroke-width="1.6" stroke-dasharray="26 11"/><circle cx="60" cy="60" r="43" fill="none" stroke="#2DD4BF" stroke-width="2.8" stroke-linecap="round" stroke-dasharray="28 107.1" stroke-dashoffset="14"/><g stroke="#2DD4BF" stroke-width="3.6" stroke-linecap="round"><path d="M60 3 V11"/><path d="M117 60 H109"/><path d="M60 117 V109"/><path d="M3 60 H11"/></g><g stroke="currentColor" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"><path d="M57 43 L43 51 L43 69 L57 77"/><path d="M63 43 L77 51 L77 69 L63 77"/></g><circle cx="60" cy="60" r="5" fill="#2DD4BF"/></svg>`; }
+function ccMarkSm() { return `<svg viewBox="0 0 120 120" fill="none"><circle cx="60" cy="60" r="46" stroke="currentColor" stroke-opacity="0.4" stroke-width="4" stroke-dasharray="38 22"/><g stroke="#2DD4BF" stroke-width="6" stroke-linecap="round"><path d="M60 1 V13"/><path d="M119 60 H107"/><path d="M60 119 V107"/><path d="M1 60 H13"/></g><g stroke="currentColor" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"><path d="M57 42 L41 51 L41 69 L57 78"/><path d="M63 42 L79 51 L79 69 L63 78"/></g><circle cx="60" cy="60" r="6.5" fill="#2DD4BF"/></svg>`; }
 function renderTopbar() {
     const v = computeVerdict();
     const vp = document.getElementById('verdictPill'), vt = document.getElementById('verdictText');
@@ -7246,7 +7249,7 @@ initBoard();      // true pointer drag-and-drop + resize for the whole home boar
    JS + encodeURIComponent so the data URI is always correctly escaped. */
 (function setFavicon() {
     try {
-        var g = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='#2DD4BF'/><g transform='translate(4,4)' fill='none' stroke='#06231f' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M12 12L6 6M12 12L18 6M12 12L6 18M12 12L18 18'/><rect x='9' y='9' width='6' height='6' rx='1.6' fill='#06231f' stroke='none'/><circle cx='6' cy='6' r='1.7' fill='#06231f' stroke='none'/><circle cx='18' cy='6' r='1.7' fill='#06231f' stroke='none'/><circle cx='6' cy='18' r='1.7' fill='#06231f' stroke='none'/><circle cx='18' cy='18' r='1.7' fill='#06231f' stroke='none'/></g></svg>";
+        var g = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120' fill='none'><style>.ink{stroke:#0b0f12}@media(prefers-color-scheme:dark){.ink{stroke:#ffffff}}</style><circle cx='60' cy='60' r='46' class='ink' stroke-opacity='0.4' stroke-width='4' stroke-dasharray='38 22'/><g stroke='#2DD4BF' stroke-width='6' stroke-linecap='round'><path d='M60 1 V13'/><path d='M119 60 H107'/><path d='M60 119 V107'/><path d='M1 60 H13'/></g><g class='ink' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'><path d='M57 42 L41 51 L41 69 L57 78'/><path d='M63 42 L79 51 L79 69 L63 78'/></g><circle cx='60' cy='60' r='6.5' fill='#2DD4BF'/></svg>";
         var l = document.querySelector("link[rel~='icon']") || document.createElement('link');
         l.setAttribute('rel', 'icon'); l.setAttribute('type', 'image/svg+xml');
         l.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(g));

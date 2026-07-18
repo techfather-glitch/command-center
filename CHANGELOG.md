@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.18] — 2026-07-17
+
+### Changed
+- **New logo — the targeting-reticle mark.** Rebuilt to match the brand mark you provided: a reticle with
+  four teal locator ticks around a hexagonal split-C core and a teal center dot. It's a theme-aware vector,
+  so it reads light on a dark theme and dark on a light one automatically (device-based) and stays crisp at
+  every size. The full reticle shows in the login / onboard hero and the sidebar; a bolder compact cut is
+  used where it's small; and the **browser-tab favicon** now swaps light/dark with your OS theme too.
+
 ## [2.9.17] — 2026-07-17
 
 ### Fixed
