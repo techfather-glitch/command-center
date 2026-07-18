@@ -451,7 +451,7 @@ function summarizeUnifiDevice(d) {
         kind,
         id: d._id || d.device_id || '',
         mac: d.mac,
-        led: { override: d.led_override || 'default', color: d.led_override_color || '', brightness: numberOrNull(d.led_override_color_brightness) },
+        led: { override: d.led_override || 'default', color: d.led_override_color || '', brightness: numberOrNull(d.led_override_color_brightness), colorCapable: Object.prototype.hasOwnProperty.call(d, 'led_override_color') },
         ip: d.ip || d.ip_addr || d.gateway_ip,
         online,
         version: d.displayable_version || d.version || d.fw_version,
@@ -578,6 +578,7 @@ let _unifiCookies = '';
 let _unifiCookieAt = 0;
 let _unifiLastGood = null;
 let _unifiLastGoodAt = 0;
+let _unifiProxy = null;   // which private-API path shape answered (true=/proxy/network OS proxy, false=/api/s legacy) so later polls skip the dead one
 const _wanHist = [];                        // rolling WAN throughput (bytes/s) for the dashboard sparkline
 const WAN_HIST_MAX = 120;
 // Only store when the rate actually changes — the controller reports the same
@@ -654,6 +655,15 @@ async function unifiControlCmd(settings, cmd) {
         if (cmd.mode) body.led_override = cmd.mode;
         if (cmd.color) { body.led_override_color = cmd.color; body.led_override = 'on'; }
         if (cmd.brightness != null) body.led_override_color_brightness = cmd.brightness;
+    } else if (cmd.action === 'restart') {
+        method = 'POST';
+        paths = [`/proxy/network/api/s/${site}/cmd/devmgr`, `/api/s/${site}/cmd/devmgr`];
+        body = { cmd: 'restart', macs: [cmd.mac] };
+    } else if (cmd.action === 'client') {
+        method = 'POST';
+        paths = [`/proxy/network/api/s/${site}/cmd/stamgr`, `/api/s/${site}/cmd/stamgr`];
+        const c = cmd.op === 'block' ? 'block-sta' : cmd.op === 'unblock' ? 'unblock-sta' : cmd.op === 'forget' ? 'forget-sta' : 'kick-sta';
+        body = c === 'forget-sta' ? { cmd: c, macs: [cmd.mac] } : { cmd: c, mac: cmd.mac };
     } else return { ok: false, error: 'unknown action' };
     let last = '';
     for (const p of paths) {
@@ -676,11 +686,13 @@ async function unifiFetchData(settings, cookies) {
     };
     let unauthorized = false;
     async function firstData(paths) {
-        for (const p of paths) {
+        const ordered = _unifiProxy === false ? paths.slice().reverse() : paths;   // prefer the path shape that answered last time
+        for (const p of ordered) {
             try {
                 const resp = await unifiRequest(settings.url, p, { cookies });
                 if (resp.status === 401 || resp.status === 403) { unauthorized = true; continue; }
                 if (resp.status >= 200 && resp.status < 300) {
+                    _unifiProxy = /\/proxy\/network\//.test(p);
                     const body = resp.body || {};
                     return Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);
                 }
@@ -749,6 +761,7 @@ async function queryUnifiStatus() {
         };
     }
     const now = Date.now();
+    if (_unifiLastGood && _unifiLastGoodAt && (now - _unifiLastGoodAt) < 8000 && !_unifiLastGood.stale) return _unifiLastGood;   // short fresh-cache: rapid polls + multiple tabs share ONE controller fetch instead of hammering it
     try {
         if (useKey) {   // official Integration API path (X-API-KEY) — reads only, fewer stats, no LED
             const summary = await unifiFetchIntegration(settings);
@@ -3068,6 +3081,16 @@ const server = http.createServer(async (req, res) => {
             if (payload.brightness != null) cmd.brightness = Math.max(0, Math.min(100, Math.round(Number(payload.brightness)) || 0));
             if (!cmd.id) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid device id' })); return; }
             if (!cmd.mode && !cmd.color && cmd.brightness == null) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'nothing to change' })); return; }
+        } else if (action === 'restart') {
+            cmd.mac = String(payload.mac || '');
+            if (!/^[0-9a-f:]{12,17}$/i.test(cmd.mac)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid mac' })); return; }
+            if (payload.confirm !== true) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'restart needs confirmation' })); return; }
+        } else if (action === 'client') {
+            cmd.mac = String(payload.mac || '');
+            cmd.op = ['block', 'unblock', 'kick', 'forget'].includes(String(payload.op)) ? String(payload.op) : '';
+            if (!/^[0-9a-f:]{12,17}$/i.test(cmd.mac)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid mac' })); return; }
+            if (!cmd.op) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'invalid client op' })); return; }
+            if ((cmd.op === 'block' || cmd.op === 'forget') && payload.confirm !== true) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'this action needs confirmation' })); return; }
         } else { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'unknown action' })); return; }
         try {
             const r = await unifiControlCmd(uni, cmd);

@@ -4,6 +4,21 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.21] — 2026-07-18
+
+### Changed
+- **UniFi is faster.** Two fixes: a short server-side fresh-cache so rapid polls and multiple open tabs
+  share one controller fetch instead of each hammering it, and the integration now remembers which API
+  path shape your controller answers on (UniFi OS proxy vs legacy `/api/s`) so it stops wasting a dead
+  request every poll.
+
+### Added
+- **UniFi device control — restart + device-aware LED colors.** In the Networking page's Device control
+  panel (still behind the opt-in switch): every device gets a **Restart** button (with a confirm), and the
+  **LED color palette now appears only on devices that actually support a colored LED** — most UniFi APs
+  accept on/off/locate but ignore color in firmware, so the swatches show only where they'll do something.
+  (Client controls — block / reconnect / forget — are already wired server-side; their UI lands next.)
+
 ## [2.9.20] — 2026-07-17
 
 ### Added

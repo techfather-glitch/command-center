@@ -710,8 +710,11 @@
     .uctl-seg button { height: 28px; padding: 0 10px; border: 0; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; border-right: 1px solid var(--hair-2); }
     .uctl-seg button:last-child { border-right: 0; }
     .uctl-seg button.on { color: #06231f; background: var(--live); }
-    .uctl-color { width: 30px; height: 28px; padding: 0; border: 1px solid var(--hair-2); border-radius: 7px; background: transparent; cursor: pointer; }
-    .uctl-bri { width: 80px; accent-color: var(--live); }
+    .uctl-palette { display: inline-flex; gap: 4px; align-items: center; }
+    .uctl-sw { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--hair-2); cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
+    .uctl-sw:hover { transform: scale(1.15); }
+    .uctl-sw.on { outline: 2px solid var(--live); outline-offset: 1px; }
+    .uctl-btn.uctl-danger:hover { color: var(--crit); border-color: var(--crit); }
     .uctl-note { font-size: 11px; color: var(--faint); margin-top: 10px; }
     .uni-auth { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 0 2px; }
     .uni-auth label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
@@ -5588,11 +5591,16 @@ window.unifiLocate = async function (btn, mac) {
     if (on) _uniLocateTimers[mac] = setTimeout(async () => { delete _uniLocateTimers[mac]; _uniLocating[mac] = false; try { await window.unifiLed({ action: 'locate', mac: mac, on: false }); } catch (e) {} paintLocate(mac); }, 120000);
 };
 window.unifiLedMode = async function (btn, id, mode) { if (await window.unifiLed({ action: 'led', id: id, mode: mode }, btn)) { const seg = btn.parentElement; if (seg) seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === btn)); } };
-window.unifiLedColor = async function (btn, id) { const row = btn.closest('.uctl-row'); if (!row) return; const color = row.querySelector('.uctl-color').value; const brightness = Number(row.querySelector('.uctl-bri').value) || 100; await window.unifiLed({ action: 'led', id: id, color: color, brightness: brightness }, btn); };
+/* A curated LED palette — the UniFi API takes arbitrary hex, but firmware only honours a
+   handful, and only devices that actually expose led_override_color (led.colorCapable) get
+   these swatches at all. */
+const UNIFI_LED_COLORS = ['#ffffff', '#2dd4bf', '#0091ff', '#00e5ff', '#00e676', '#ffea00', '#ff9100', '#ff1744', '#ff4fd8', '#8b5cf6'];
+window.unifiLedColor = async function (btn, id, color) { if (await window.unifiLed({ action: 'led', id: id, color: color }, btn)) { const seg = btn.parentElement; if (seg) seg.querySelectorAll('.uctl-sw').forEach(b => b.classList.toggle('on', b === btn)); } };
+window.unifiRestart = async function (btn, mac, name) { if (!confirm('Restart ' + (name || 'this device') + '? It will drop offline for a minute or two.')) return; await window.unifiLed({ action: 'restart', mac: mac, confirm: true }, btn); };
 function netDeviceControl() {
     const devs = unifiDevicesAll(); if (!devs.length) return '';
     const on = unifiControlEnabled();
-    const head = `<div class="lane-head"><span class="eyebrow">Device control</span><span class="lane-meta"><label class="uctl-switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="toggleUnifiControl()"> Allow LED &amp; locate</label></span></div>`;
+    const head = `<div class="lane-head"><span class="eyebrow">Device control</span><span class="lane-meta"><label class="uctl-switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="toggleUnifiControl()"> Allow device control</label></span></div>`;
     if (!on) return `<section class="lane">${head}<hr class="hair"><div class="lane-body"><div class="uctl-note" style="font-size:12px;color:var(--muted)">Turn this on to flash a device's LED to find it, switch its LED on or off, or set a color. Commands are sent to your UniFi controller with your saved login — nothing is written unless you flip this switch.</div></div></section>`;
     const rows = devs.map(d => {
         const led = (d.led && d.led.override) || 'default';
@@ -5603,14 +5611,13 @@ function netDeviceControl() {
             <div class="uctl-actions">
                 <button class="uctl-btn${_uniLocating[d.mac] ? ' on' : ''}" data-loc="${esc(d.mac || '')}" ${d.mac ? '' : 'disabled'} onclick="unifiLocate(this,'${esc(d.mac || '')}')" title="Blink the LED to find this device (click again to stop)">${_uniLocating[d.mac] ? 'Stop' : 'Locate'}</button>
                 <span class="uctl-seg">${['on', 'off', 'default'].map(m => `<button class="${led === m ? 'on' : ''}" ${d.id ? '' : 'disabled'} onclick="unifiLedMode(this,'${esc(d.id || '')}','${m}')">${m === 'default' ? 'Auto' : m === 'on' ? 'On' : 'Off'}</button>`).join('')}</span>
-                <input type="color" class="uctl-color" value="${esc(color)}" title="LED color (RGB-capable devices)">
-                <input type="range" class="uctl-bri" min="0" max="100" value="${bri}" title="LED brightness">
-                <button class="uctl-btn" ${d.id ? '' : 'disabled'} onclick="unifiLedColor(this,'${esc(d.id || '')}')">Apply color</button>
+                ${(d.led && d.led.colorCapable) ? `<span class="uctl-palette" title="LED color">${UNIFI_LED_COLORS.map(c => `<button class="uctl-sw${color.toLowerCase() === c ? ' on' : ''}" style="background:${c}" ${d.id ? '' : 'disabled'} onclick="unifiLedColor(this,'${esc(d.id || '')}','${c}')" aria-label="Set LED ${c}"></button>`).join('')}</span>` : ''}
+                <button class="uctl-btn uctl-danger" ${d.mac ? '' : 'disabled'} onclick="unifiRestart(this,'${esc(d.mac || '')}',${jstr(d.name || d.model || 'device')})" title="Reboot this device">Restart</button>
             </div>
         </div>`;
     }).join('');
     const keyNote = (Store.unifi && Store.unifi.integrationApi) ? `<div class="uctl-note" style="color:var(--warn);margin:0 0 10px">This instance uses API-key auth — the key's Integration API can't control LEDs. Switch its auth to username &amp; password in Settings to use these controls.</div>` : '';
-    return `<section class="lane">${head}<hr class="hair">${keyNote}<div class="lane-body uctl-list">${rows}</div><div class="uctl-note">Color and brightness apply only to devices with RGB LEDs; every device accepts Locate and On / Off / Auto.</div></section>`;
+    return `<section class="lane">${head}<hr class="hair">${keyNote}<div class="lane-body uctl-list">${rows}</div><div class="uctl-note">Color swatches show only on devices with an RGB LED. Restart reboots the device (offline briefly). Locate and On / Off / Auto work on every device.</div></section>`;
 }
 PAGES.networking = function () {
     const u = Store.unifi;
