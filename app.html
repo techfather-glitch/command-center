@@ -2374,7 +2374,7 @@
 <div class="app" id="app">
     <aside class="rail" id="rail" data-collapsed="false">
         <div class="rail-brand">
-            <div class="rail-logo" title="Command Center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg></div>
+            <div class="rail-logo" title="Command Center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12L6 6M12 12L18 6M12 12L6 18M12 12L18 18"/><rect x="9" y="9" width="6" height="6" rx="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="6" cy="18" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="1.7" fill="currentColor" stroke="none"/></svg></div>
             <span class="rail-wordmark">Command Center</span>
             <button class="rail-collapse" id="railCollapse" onclick="toggleRail()" title="Collapse (Ctrl/Cmd-\)" aria-label="Collapse sidebar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
         </div>
@@ -2694,7 +2694,7 @@ function showLogin(msg) {
     const el = document.getElementById('login'); if (!el) return;
     document.body.classList.add('onboarding'); el.hidden = false;
     el.innerHTML = `<div class="ob-shell"><div class="ob-card">
-        <div class="ob-hero"><div class="ob-logo">${navSvg('gear')}</div><h1 class="ob-title">${esc((Store.settings && Store.settings.appName) || 'Command Center')}</h1><p class="ob-lead">This dashboard is protected. Enter your password to continue.</p></div>
+        <div class="ob-hero"><div class="ob-logo">${ccMark()}</div><h1 class="ob-title">${esc((Store.settings && Store.settings.appName) || 'Command Center')}</h1><p class="ob-lead">This dashboard is protected. Enter your password to continue.</p></div>
         <form onsubmit="doLogin(event)"><div class="ob-field" style="margin-top:14px"><input class="set-input" id="loginPw" type="password" autocomplete="current-password" placeholder="Password" autofocus></div>
         <div class="ob-msg ${msg ? 'bad' : ''}" id="loginMsg">${esc(msg || '')}</div>
         <button class="tbtn ob-primary" type="submit" style="width:100%;min-height:44px;justify-content:center">Unlock</button></form></div></div>`;
@@ -3297,6 +3297,10 @@ function computeVerdict() {
     const state = reconnecting ? 'offline' : crit ? 'critical' : items.length ? 'warning' : 'healthy';
     return (_verdict = { state, count: items.length, crit, warn: items.length - crit, items });
 }
+/* The Command Center mark — a central core (the dashboard) linked by four spokes to
+   four nodes: one command center unifying everything around it. currentColor so it
+   reads dark-on-teal in the rail and teal-on-dark on the login/onboard hero. */
+function ccMark() { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12L6 6M12 12L18 6M12 12L6 18M12 12L18 18"/><rect x="9" y="9" width="6" height="6" rx="1.6" fill="currentColor" stroke="none"/><circle cx="6" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="6" r="1.7" fill="currentColor" stroke="none"/><circle cx="6" cy="18" r="1.7" fill="currentColor" stroke="none"/><circle cx="18" cy="18" r="1.7" fill="currentColor" stroke="none"/></svg>`; }
 function renderTopbar() {
     const v = computeVerdict();
     const vp = document.getElementById('verdictPill'), vt = document.getElementById('verdictText');
@@ -3521,7 +3525,7 @@ function renderOnboard() {
     const first = el.querySelector('input,select,button.ob-primary'); if (first && _obStep > 0) { try { first.focus(); } catch (e) {} }
 }
 function obWelcome() {
-    return `<div class="ob-hero"><div class="ob-logo">${navSvg('grid')}</div><h1 class="ob-title">Command Center</h1><p class="ob-lead">Mission control for your homelab. Let's connect your first service — about two minutes.</p></div>
+    return `<div class="ob-hero"><div class="ob-logo">${ccMark()}</div><h1 class="ob-title">Command Center</h1><p class="ob-lead">Mission control for your homelab. Let's connect your first service — about two minutes.</p></div>
         <div class="ob-actions"><button class="tbtn ob-primary" onclick="obGo(1)">Get started</button><button class="tbtn ghost" onclick="obSkip()">Skip, I'll explore first</button></div>
         <p class="ob-fine">Nothing is sent anywhere. Everything runs on your server.</p>`;
 }
@@ -3567,7 +3571,7 @@ function obDone() {
     const connected = enabledIntegrations().length + ((Store.services || []).length ? 1 : 0);
     const authOn = Store.meta && Store.meta.authEnabled;
     const line = (ok, t) => `<div class="ob-check"><span class="dot ${ok ? 'ok' : 'idle'}"></span>${t}</div>`;
-    return `<div class="ob-hero"><div class="ob-logo done">${navSvg('grid')}</div><h1 class="ob-title">You're set</h1><p class="ob-lead">Command Center is ready. It fills itself in as providers report — nothing is faked.</p></div>
+    return `<div class="ob-hero"><div class="ob-logo done">${ccMark()}</div><h1 class="ob-title">You're set</h1><p class="ob-lead">Command Center is ready. It fills itself in as providers report — nothing is faked.</p></div>
         <div class="ob-summary">
             ${line(true, 'Dashboard configured')}
             ${line(authOn, authOn ? 'Password protection on' : 'Open on your network (no password)')}
@@ -7158,6 +7162,17 @@ if (window.__CC_DEMO__) {
 render();         // first paint with whatever we have (settings injected)
 initTileDnd();    // legacy tile-grid DnD (inert now the home board owns editing)
 initBoard();      // true pointer drag-and-drop + resize for the whole home board
+/* Browser-tab favicon: the mark as a self-contained teal badge (dark glyph). Built in
+   JS + encodeURIComponent so the data URI is always correctly escaped. */
+(function setFavicon() {
+    try {
+        var g = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='#2DD4BF'/><g transform='translate(4,4)' fill='none' stroke='#06231f' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'><path d='M12 12L6 6M12 12L18 6M12 12L6 18M12 12L18 18'/><rect x='9' y='9' width='6' height='6' rx='1.6' fill='#06231f' stroke='none'/><circle cx='6' cy='6' r='1.7' fill='#06231f' stroke='none'/><circle cx='18' cy='6' r='1.7' fill='#06231f' stroke='none'/><circle cx='6' cy='18' r='1.7' fill='#06231f' stroke='none'/><circle cx='18' cy='18' r='1.7' fill='#06231f' stroke='none'/></g></svg>";
+        var l = document.querySelector("link[rel~='icon']") || document.createElement('link');
+        l.setAttribute('rel', 'icon'); l.setAttribute('type', 'image/svg+xml');
+        l.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(g));
+        document.head.appendChild(l);
+    } catch (e) {}
+})();
 initCharts();     // hover crosshair + tooltip + synced time-range on live charts
 refreshIntegrations();   // integration catalog is static — fetch once (Settings + discovery), not every poll
 refreshAll().then(() => { refreshMeta().catch(() => {}); initOnboard(); });   // first-run setup decision after first data

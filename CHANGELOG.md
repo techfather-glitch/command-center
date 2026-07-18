@@ -4,6 +4,14 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.14] — 2026-07-17
+
+### Changed
+- **A proper logo.** Command Center now has a real mark — a central core linked by four spokes to four
+  nodes (one command center unifying everything around it). It replaces the generic placeholder glyph in
+  the sidebar and on the login / onboard screens, and it's now the **browser-tab favicon** too (the tab
+  previously had no icon at all).
+
 ## [2.9.13] — 2026-07-17
 
 ### Changed
