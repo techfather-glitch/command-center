@@ -859,6 +859,11 @@
     .rail-item .ico svg { width: 20px; height: 20px; }
     .rail-item .rail-label { font: var(--fw-label) var(--fs-body)/1 var(--font); flex: 1; overflow: hidden; text-overflow: ellipsis; }
     .rail-item .rail-roll { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+    .rail-item.rail-more { background: transparent; border: 0; width: 100%; text-align: left; font: inherit; color: var(--text-3); }
+    .rail-item.rail-more:hover { color: var(--text-1); background: rgba(255,255,255,0.04); }
+    .rail-item.rail-dim { opacity: 0.5; }
+    .rail-item.rail-dim:hover { opacity: 1; }
+    .rail-more-caret { margin-left: auto; font-size: 10px; color: var(--faint); }
     .rail[data-collapsed="true"] .rail-item { justify-content: center; padding: 0; }
     .rail[data-collapsed="true"] .rail-nav { align-items: center; }
     .rail-foot { display: flex; flex-direction: column; gap: 2px; }
@@ -2818,7 +2823,7 @@ function containerList() {
     return list.map(c => ({ ...c, controllable: false }));
 }
 window.ctrAction = async function (action, id) {
-    if (!id) { toast('Connect a Docker host in Settings → Integrations to control containers.'); return; }
+    if (!id) { toast('Connect a Docker host in Settings → Providers to control containers.'); return; }
     toast(`${action.charAt(0).toUpperCase() + action.slice(1)}ing container…`);
     try {
         const r = await jpost('/api/docker/action', { action, id });
@@ -3280,14 +3285,23 @@ function railRoll(id) {
     if (id === 'alerts') { const v = computeVerdict(); if (v.count > 0) return `<span class="rail-roll" style="background:var(--${v.crit ? 'critical' : 'warning'})"></span>`; }
     return '';
 }
+let _railMore = false;
+window.toggleRailMore = function () { _railMore = !_railMore; renderNav(); };
 function renderNav() {
     const nav = document.getElementById('nav');
     if (nav) {
+        const active = NAV.filter(n => conceptActive(n.id));
+        const hidden = NAV.filter(n => !conceptActive(n.id));
+        if (hidden.some(n => n.id === route)) _railMore = true;   // sitting on a not-yet-set-up page → reveal it so it's reachable
         let html = '', lastSect = '';
-        NAV.filter(n => conceptActive(n.id)).forEach(n => {
+        active.forEach(n => {
             if (n.section && n.section !== lastSect) { html += `<div class="rail-sect">${esc(n.section)}</div>`; lastSect = n.section; }
             html += `<a class="rail-item ${navActive(n) ? 'active' : ''}" href="#/${n.id}" title="${esc(n.label)}"><span class="ico">${navSvg(n.icon)}</span><span class="rail-label">${esc(n.label)}</span>${railRoll(n.id)}</a>`;
         });
+        if (hidden.length) {
+            html += `<button class="rail-item rail-more" onclick="toggleRailMore()" title="Show pages you haven't set up yet"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span><span class="rail-label">More</span><span class="rail-more-caret">${_railMore ? '▾' : '▸'}</span></button>`;
+            if (_railMore) hidden.forEach(n => { html += `<a class="rail-item rail-dim ${navActive(n) ? 'active' : ''}" href="#/${n.id}" title="${esc(n.label)} — not set up yet"><span class="ico">${navSvg(n.icon)}</span><span class="rail-label">${esc(n.label)}</span></a>`; });
+        }
         nav.innerHTML = html;
     }
     const foot = document.getElementById('railFoot');
@@ -4614,7 +4628,7 @@ function widgetDetail(s, opts) {
     const id = svcIntegrationId(s), w = id ? Store.widgets[id] : null;
     const head = detHead(s, [detBtnOpen(s), detBtnRestart(s)]);
     if (!id) return head + `<div class="det-sec">${connectNote(opts.noIntTitle, opts.noIntSub)}</div>`;
-    if (!w || w.ok === false) return head + `<div class="det-sec">${connectNote('Connect ' + integrationTitle(id), 'Add ' + integrationTitle(id) + '\'s URL and key in <a href="#/settings">Settings → Integrations</a> to see ' + opts.connectWhat + ' here.' + (w && w.error ? '<br><span style="color:var(--t4)">' + esc(errText(w.error)) + '</span>' : ''))}</div>`;
+    if (!w || w.ok === false) return head + `<div class="det-sec">${connectNote('Connect ' + integrationTitle(id), 'Add ' + integrationTitle(id) + '\'s URL and key in <a href="#/settings">Settings → Providers</a> to see ' + opts.connectWhat + ' here.' + (w && w.error ? '<br><span style="color:var(--t4)">' + esc(errText(w.error)) + '</span>' : ''))}</div>`;
     const tiles = (w.fields || []).map(f => kpiTile(f.label, fmtField(f), f.state === 'good' ? 'good' : f.state === 'warn' ? 'warn' : f.state === 'bad' ? 'crit' : '')).join('');
     const gauge = w.gauge ? kpiTile(w.gauge.label, Math.round(w.gauge.value) + (w.gauge.unit || ''), w.gauge.state === 'bad' ? 'crit' : w.gauge.state) : '';
     const items = Array.isArray(w.items) ? w.items : [];
@@ -4692,7 +4706,7 @@ function opsBody(groups, concept) {
     _opsGroups = groups; _opsConcept = concept;
     if (!Store.lastUpdate && !Store.services.length) return `<div class="instrument ops-cmdbar" style="height:64px"></div><div class="g-skel" style="height:420px;margin-top:12px"></div>`;
     const list = opsFilteredList();
-    if (!list.length) return `${providerStrip(concept)}<section class="lane"><div class="connect-note"><div class="cn-txt">No ${esc(concept)} providers connected</div><div class="cn-sub">Connect a provider in <a href="#/settings">Settings → Integrations</a> and this view fills itself in — live, never faked.</div></div></section>`;
+    if (!list.length) return `${providerStrip(concept)}<section class="lane"><div class="connect-note"><div class="cn-txt">No ${esc(concept)} providers connected</div><div class="cn-sub">Connect a provider in <a href="#/settings">Settings → Providers</a> and this view fills itself in — live, never faked.</div></div></section>`;
     const s = opsSelected();
     const groupsMap = {}; list.forEach(x => { const g = opsGroup(x); (groupsMap[g] = groupsMap[g] || []).push(x); });
     const nav = OPS_ORDER.filter(g => groupsMap[g]).map(g => { const gl = groupsMap[g].slice().sort((a, b) => svcRank(a) - svcRank(b) || a.name.localeCompare(b.name)); const up = gl.filter(svcOnline).length; return `<div class="svcnav-group"><div class="svcnav-glabel">${esc(g)}<span class="gc">${up}/${gl.length}</span></div>${gl.map(svcNavRow).join('')}</div>`; }).join('');
@@ -4791,7 +4805,7 @@ function mediaHistoryRail() {
     const probRow = p => `<div class="insight-row"><span class="dot warn"></span><span>${esc(p.label)}${p.sub ? ' <span style="color:var(--t3)">· ' + esc(p.sub) + '</span>' : ''}</span><span class="ir-ts">${p.at ? esc(fmtAgo(p.at)) : ''}</span></div>`;
     const recent = (on && Array.isArray(w.items) && w.items.length)
         ? w.items.slice(0, 8).map(recRow).join('')
-        : connectNote('Connect Tautulli', 'Add Tautulli in <a href="#/settings">Settings → Integrations</a> to see watch history and per-user activity here.');
+        : connectNote('Connect Tautulli', 'Add Tautulli in <a href="#/settings">Settings → Providers</a> to see watch history and per-user activity here.');
     const problems = !on
         ? connectNote('Problem streams', 'Repeat transcodes, buffering and low-bandwidth sessions surface here once Tautulli is connected.')
         : (Array.isArray(w.problems) && w.problems.length)
@@ -5031,7 +5045,7 @@ function dnSection() {
     if (p.setupState !== 'connected') {
         if (!svc || !svcOnline(svc)) return '';   // not enabled, not running → no empty room
         return `<section class="lane dn-lane"><div class="lane-head"><span class="eyebrow">Dropped Needle · music discovery</span><span class="lane-meta"><span class="dot ok"></span>running on your network · not connected</span></div><hr class="hair">
-            <div class="connect-note" style="display:flex;align-items:center;gap:12px;padding:12px 14px"><div style="flex:1;min-width:0"><div class="cn-txt">Connect Dropped Needle</div><div class="cn-sub">Requests, new releases from artists you follow, and now-playing land here. In <a href="#" onclick="igGoSetup('${DN_ID}');return false">Settings → Integrations</a> use <b>Sign in with Plex</b> (or username &amp; password if your account has one), then Enable.</div></div>
+            <div class="connect-note" style="display:flex;align-items:center;gap:12px;padding:12px 14px"><div style="flex:1;min-width:0"><div class="cn-txt">Connect Dropped Needle</div><div class="cn-sub">Requests, new releases from artists you follow, and now-playing land here. In <a href="#" onclick="igGoSetup('${DN_ID}');return false">Settings → Providers</a> use <b>Sign in with Plex</b> (or username &amp; password if your account has one), then Enable.</div></div>
             ${base ? `<button class="da-btn" style="flex:0 0 auto" onclick="window.open('${esc(base)}','_blank','noopener')">Open app ↗</button>` : ''}</div></section>`;
     }
     const w = p.data;
@@ -5146,7 +5160,7 @@ function pipeRail() {
                 : pipeGate({ lbl: 'Search', connect: true, sub: 'enable Prowlarr in Settings → Providers' })}
         ${queued != null ? pipeGate({ lbl: 'Grabbed', fig: String(queued), sub: 'in *Arr queues', dot: queued ? 'live' : 'idle', state: queued ? 'live' : 'idle', flowing: queued > 0 }) : pipeGate({ lbl: 'Grabbed', connect: true, sub: arrs.length ? `${arrUp}/${arrs.length} *Arr up — connect for queue depth` : 'enable Sonarr / Radarr in Settings' })}
         ${dlOk ? pipeGate({ lbl: 'Downloading', fig: String(dlActive), sub: dlSpeed > 0 ? fmtBytes(dlSpeed) + '/s' : 'idle', dot: dlSpeed > 0 ? 'live' : 'idle', state: dlSpeed > 0 ? 'live' : 'idle', flowing: dlSpeed > 0 }) : pipeGate({ lbl: 'Downloading', connect: true, sub: 'connect qBittorrent / SABnzbd' })}
-        ${trOk ? pipeGate({ lbl: 'Import & match', fig: '—', sub: 'telemetry not exposed by Tracearr yet', dot: 'idle', state: 'idle' }) : pipeGate({ lbl: 'Import & match', connect: true, sub: 'via Tracearr' })}
+        ${arrAny ? pipeGate({ lbl: 'Import & match', fig: imp24 ? String(imp24) : '—', sub: imp24 ? 'imported today · via *Arr' : 'handled by Sonarr · Radarr', dot: imp24 ? 'live' : 'idle', state: imp24 ? 'live' : 'idle', flowing: imp24 > 0 }) : pipeGate({ lbl: 'Import & match', connect: true, sub: 'via Sonarr / Radarr' })}
         ${recent.length
             ? pipeGate({ lbl: 'Library', fig: imp24 ? String(imp24) : String(recent.length), sub: imp24 ? 'imported today' : ('newest ' + fmtAgo(new Date(recent[0].at).getTime())), dot: 'live', state: 'live', flowing: imp24 > 0 })
             : arrAny
@@ -5161,12 +5175,12 @@ function dlRows() {
         const pct = Math.round((Number(t.progress) || 0) * 100);
         const stalled = /stalled/i.test(t.state || '') || (Number(t.dlspeed) || 0) === 0;
         const eta = (t.eta && t.eta > 0 && t.eta < 8640000) ? fmtUptime(t.eta) : '';
-        rows.push(`<div class="dl-item">${iconImg('qBittorrent', 20)}<span class="dl-name"><b>${esc(t.name || 'torrent')}</b><i class="dl-route">torrent · ${esc(t.state || '')}</i></span><span class="dl-prog"><i class="${stalled ? 'stall' : ''}" style="width:${pct}%"></i></span><span class="dl-v">${(Number(t.dlspeed) || 0) > 0 ? fmtBytes(t.dlspeed) + '/s' : (stalled ? 'stalled' : pct + '%')}${eta ? '<br>' + eta : ''}</span></div>`);
+        rows.push(`<div class="dl-item">${iconImg('qBittorrent', 20)}<span class="dl-name"><b>${esc(t.name || 'torrent')}</b><i class="dl-route">${esc(t.category || 'torrent')} · ${esc(t.state || '')}</i></span><span class="dl-prog"><i class="${stalled ? 'stall' : ''}" style="width:${pct}%"></i></span><span class="dl-v">${(Number(t.dlspeed) || 0) > 0 ? fmtBytes(t.dlspeed) + '/s' : (stalled ? 'stalled' : pct + '%')}${eta ? '<br>' + eta : ''}</span></div>`);
     });
     const sab = sabQueue();
     if (sab && Array.isArray(sab.slots)) sab.slots.slice(0, 8).forEach(s => {
         const pct = Math.round(Number(s.percentage) || 0);
-        rows.push(`<div class="dl-item">${iconImg('SABnzbd', 20)}<span class="dl-name"><b>${esc(s.filename || 'nzb')}</b><i class="dl-route">usenet · ${esc(s.timeleft || '')}</i></span><span class="dl-prog"><i style="width:${pct}%"></i></span><span class="dl-v">${esc(s.mbleft ? Math.round(s.mbleft) + ' MB left' : pct + '%')}</span></div>`);
+        rows.push(`<div class="dl-item">${iconImg('SABnzbd', 20)}<span class="dl-name"><b>${esc(s.filename || 'nzb')}</b><i class="dl-route">${esc(s.cat || 'usenet')} · ${esc(s.timeleft || '')}</i></span><span class="dl-prog"><i style="width:${pct}%"></i></span><span class="dl-v">${esc(s.mbleft ? Math.round(s.mbleft) + ' MB left' : pct + '%')}</span></div>`);
     });
     return rows;
 }
@@ -5215,8 +5229,7 @@ PAGES.automation = function () {
     const recentRows = recent.slice(0, 12).map(x => `<div class="dl-item">${iconImg(x.kind === 'movie' ? 'Radarr' : 'Sonarr', 20)}<span class="dl-name"><b>${esc(x.title)}</b><i class="dl-route">${esc([x.sub, x.at ? fmtAgo(new Date(x.at).getTime()) : ''].filter(Boolean).join(' · '))}</i></span></div>`).join('');
     const work = `<div class="pipe-work">
         <section class="lane"><div class="lane-head"><span class="eyebrow">Downloading</span><span class="lane-meta">${dls.length + dnDl.length} item${(dls.length + dnDl.length) === 1 ? '' : 's'} · updated ${fmtAgo(Store.lastUpdate)}</span></div><hr class="hair"><div class="lane-body">${(dls.length || dnDl.length) ? `${dls.join('')}${dnDl.length ? `<div class="svc-group__label">Dropped Needle · music${dnc.problems ? ` · ${dnc.problems} stuck` : ''} · <a href="#" onclick="openDnDrawer('downloads');return false" style="color:var(--t3)">manage →</a></div>${dnDl.join('')}` : ''}` : `<div class="connect-note" style="padding:14px"><div class="cn-txt">Pipeline idle</div><div class="cn-sub">Nothing downloading right now — grabs land here with live speed and ETA.</div></div>`}</div></section>
-        <section class="lane"><div class="lane-head"><span class="eyebrow">Import & match · via Tracearr</span><span class="lane-meta">first-class</span></div><hr class="hair"><div class="lane-body">${trOk ? `<div class="connect-note" style="padding:12px"><div class="cn-sub">Tracearr is connected — scan/import telemetry isn't exposed by its public streams endpoint yet. <a href="#/media">Streams are live on Media →</a></div></div>` : connectNote('Connect Tracearr', 'Scan, import and match activity appears here once Tracearr is reachable.')}</div></section>
-        <section class="lane"><div class="lane-head"><span class="eyebrow">Recently added to library</span><span class="lane-meta">${recent.length ? recent.length + ' shown · via Sonarr · Radarr' : 'via Sonarr · Radarr'}</span></div><hr class="hair"><div class="lane-body">${recentRows || connectNote('Nothing imported recently', 'When Sonarr or Radarr imports a grab it lands here — enable them in <a href="#/settings">Settings → Providers</a>.')}</div></section>
+        <section class="lane"><div class="lane-head"><span class="eyebrow">Import &amp; match · via Sonarr · Radarr</span><span class="lane-meta">${recent.length ? recent.length + ' recent import' + (recent.length === 1 ? '' : 's') : 'as grabs finish'}</span></div><hr class="hair"><div class="lane-body">${recentRows || connectNote('Nothing imported recently', 'When Sonarr or Radarr imports a completed download it lands here — enable them in <a href="#/settings">Settings → Providers</a>.')}</div></section>
     </div>`;
     return `<div class="pipe-view">
         ${providerStrip('automation')}
@@ -5240,7 +5253,7 @@ PAGES.ai = function () {
     const oll = Store.widgets['ollama'];
     const ollOn = enabledIntegrations().some(d => d.id === 'ollama');
     if (!ollOn || !oll) {
-        return `<div>${providerStrip('ai')}<section class="lane">${connectNote('Connect a model runtime', 'The AI deck shows your local models, what is loaded into memory, and VRAM in use — live from the runtime, never faked. Connect <b>Ollama</b> in <a href="#/settings">Settings → Integrations</a>.')}</section></div>`;
+        return `<div>${providerStrip('ai')}<section class="lane">${connectNote('Connect a model runtime', 'The AI deck shows your local models, what is loaded into memory, and VRAM in use — live from the runtime, never faked. Connect <b>Ollama</b> in <a href="#/settings">Settings → Providers</a>.')}</section></div>`;
     }
     if (oll.ok === false) {
         return `<div>${providerStrip('ai')}<section class="lane">${connectNote('Ollama unreachable', 'Command Center can reach the runtime but it returned an error: <b>' + esc(errText(oll.error)) + '</b>. Check the URL and that Ollama is listening (default <span class="mono">http://localhost:11434</span>).')}</section></div>`;
@@ -5276,7 +5289,7 @@ PAGES.smarthome = function () {
     const ha = Store.widgets['homeassistant'];
     const haOn = enabledIntegrations().some(d => d.id === 'homeassistant');
     if (!haOn || !ha) {
-        return `<div>${providerStrip('smarthome')}<section class="lane">${connectNote('Connect your smart home', 'This deck shows lights, climate, locks, presence and device health — live from <b>Home Assistant</b>, never faked. Connect it in <a href="#/settings">Settings → Integrations</a> with a long-lived access token.')}</section></div>`;
+        return `<div>${providerStrip('smarthome')}<section class="lane">${connectNote('Connect your smart home', 'This deck shows lights, climate, locks, presence and device health — live from <b>Home Assistant</b>, never faked. Connect it in <a href="#/settings">Settings → Providers</a> with a long-lived access token.')}</section></div>`;
     }
     if (ha.ok === false) {
         return `<div>${providerStrip('smarthome')}<section class="lane">${connectNote('Home Assistant unreachable', 'The runtime returned an error: <b>' + esc(errText(ha.error)) + '</b>. Check the URL and that the long-lived access token is valid.')}</section></div>`;
@@ -5356,7 +5369,7 @@ PAGES.logs = function () {
     _opsGroups = null; _opsConcept = 'logs';
     const list = containerList();
     if (!dockerControl()) {
-        return `<div class="logs-view">${providerStrip('applications')}<section class="lane">${connectNote('Logs need a Docker host', 'The log floor tails any container\'s stdout/stderr live. Connect a <b>Docker</b> host in <a href="#/settings">Settings → Integrations</a>' + (list.length ? ' — cAdvisor is read-only and can\'t stream logs.' : '.'))}</section></div>`;
+        return `<div class="logs-view">${providerStrip('applications')}<section class="lane">${connectNote('Logs need a Docker host', 'The log floor tails any container\'s stdout/stderr live. Connect a <b>Docker</b> host in <a href="#/settings">Settings → Providers</a>' + (list.length ? ' — cAdvisor is read-only and can\'t stream logs.' : '.'))}</section></div>`;
     }
     if (!list.length) return `<div class="logs-view">${providerStrip('applications')}<section class="lane">${connectNote('No containers', 'Docker is connected but lists no containers yet.')}</section></div>`;
     const sorted = list.slice().sort((a, b) => (b.running - a.running) || (a.label || a.name || '').localeCompare(b.label || b.name || ''));

@@ -4,6 +4,22 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.23] — 2026-07-18
+
+### Fixed
+- **"Settings → Integrations" pointed to a section that doesn't exist.** It's called **Providers** — every
+  "add it in Settings → Integrations" hint now correctly says **Settings → Providers**.
+- **Unconfigured pages (e.g. AI) were reachable on mobile but not desktop.** The desktop sidebar now has a
+  **More** expander that reveals pages you haven't set up yet (dimmed), matching the mobile More menu; it
+  auto-opens when you're on one of those pages.
+- **The Automation "Import & match" tile was mislabeled "via Tracearr"** and showed an empty "telemetry not
+  exposed" note — but importing is done by Sonarr / Radarr, not Tracearr. It's now **"Import & match · via
+  Sonarr · Radarr"** and shows your real recent imports (the redundant separate "Recently added" lane is folded in).
+
+### Changed
+- **The Downloading list shows each item's category** (qBittorrent / SABnzbd category) — so with several
+  *arr instances you can tell which one a download belongs to at a glance.
+
 ## [2.9.22] — 2026-07-18
 
 ### Added
