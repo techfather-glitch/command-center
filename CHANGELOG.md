@@ -4,6 +4,13 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.22] — 2026-07-18
+
+### Added
+- **Capability build — reads batch 2** (from the API audit):
+  - **Immich**: a **storage gauge** (disk % used), **background-job activity** (processing / failed counts), disk used/total, and version.
+  - **Netdata**: reports its **version** alongside the alarm counts.
+
 ## [2.9.21] — 2026-07-18
 
 ### Changed
