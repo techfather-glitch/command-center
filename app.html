@@ -4,6 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Homelab Command Center</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#0b0f14">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Command Center">
 <style>
 /* Self-hosted variable fonts (latin subset) — first paint never waits on a font CDN. */
 @font-face { font-family: 'Inter'; font-style: normal; font-weight: 100 900; font-display: swap; src: url(/fonts/inter-var.woff2) format('woff2'); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
@@ -7245,17 +7254,11 @@ if (window.__CC_DEMO__) {
 render();         // first paint with whatever we have (settings injected)
 initTileDnd();    // legacy tile-grid DnD (inert now the home board owns editing)
 initBoard();      // true pointer drag-and-drop + resize for the whole home board
-/* Browser-tab favicon: the mark as a self-contained teal badge (dark glyph). Built in
-   JS + encodeURIComponent so the data URI is always correctly escaped. */
-(function setFavicon() {
-    try {
-        var g = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120' fill='none'><style>.ink{stroke:#0b0f12}@media(prefers-color-scheme:dark){.ink{stroke:#ffffff}}</style><circle cx='60' cy='60' r='46' class='ink' stroke-opacity='0.4' stroke-width='4' stroke-dasharray='38 22'/><g stroke='#2DD4BF' stroke-width='6' stroke-linecap='round'><path d='M60 1 V13'/><path d='M119 60 H107'/><path d='M60 119 V107'/><path d='M1 60 H13'/></g><g class='ink' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'><path d='M57 42 L41 51 L41 69 L57 78'/><path d='M63 42 L79 51 L79 69 L63 78'/></g><circle cx='60' cy='60' r='6.5' fill='#2DD4BF'/></svg>";
-        var l = document.querySelector("link[rel~='icon']") || document.createElement('link');
-        l.setAttribute('rel', 'icon'); l.setAttribute('type', 'image/svg+xml');
-        l.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(g));
-        document.head.appendChild(l);
-    } catch (e) {}
-})();
+/* PWA: register the service worker (offline app-shell + installability). The tab/app
+   icons + manifest are static <link>s served by the server (/icon.svg, /icon-*.png,
+   /apple-touch-icon.png, /manifest.webmanifest) — those work on mobile where a JS-
+   injected data-URI favicon did not. */
+if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); }); }
 initCharts();     // hover crosshair + tooltip + synced time-range on live charts
 refreshIntegrations();   // integration catalog is static — fetch once (Settings + discovery), not every poll
 refreshAll().then(() => { refreshMeta().catch(() => {}); initOnboard(); });   // first-run setup decision after first data

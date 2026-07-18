@@ -488,3 +488,29 @@ test('UniFi summary maps Integration-API devices (id + led surfaced, buckets cor
   assert.ok(s.devices[0].led && typeof s.devices[0].led === 'object');
   assert.equal(s.offline, 1);                     // the offline AP is counted
 });
+
+// ── PWA: generated app icons must be valid PNGs; manifest + service worker well-formed ──
+test('PWA icons are valid decodable PNGs and the manifest/SW are well-formed', () => {
+  const zlib = require('node:zlib');
+  const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+  for (const [k, N] of [['192', 192], ['512', 512], ['maskable', 512], ['apple', 180]]) {
+    const png = cc.ccIcon(k);
+    assert.ok(Buffer.isBuffer(png) && png.length > 100, k + ' png produced');
+    for (let i = 0; i < 8; i++) assert.equal(png[i], sig[i], k + ' png signature byte ' + i);
+    assert.equal(png.slice(12, 16).toString('ascii'), 'IHDR', k + ' IHDR');
+    assert.equal(png.readUInt32BE(16), N, k + ' width');
+    assert.equal(png.readUInt32BE(20), N, k + ' height');
+    assert.equal(png[24], 8, k + ' bit depth');
+    assert.equal(png[25], 6, k + ' colour type RGBA');
+    let off = 8; const idat = []; let sawIEND = false;
+    while (off < png.length) { const len = png.readUInt32BE(off); const t = png.slice(off + 4, off + 8).toString('ascii'); if (t === 'IDAT') idat.push(png.slice(off + 8, off + 8 + len)); if (t === 'IEND') sawIEND = true; off += 12 + len; }
+    assert.ok(sawIEND, k + ' has IEND');
+    assert.equal(zlib.inflateSync(Buffer.concat(idat)).length, N * (N * 4 + 1), k + ' inflated scanline length');
+  }
+  const man = JSON.parse(cc.CC_MANIFEST);
+  assert.equal(man.display, 'standalone');
+  assert.equal(man.start_url, '/');
+  assert.ok(man.icons.some(i => i.purpose === 'maskable'), 'maskable icon present');
+  assert.doesNotThrow(() => new Function(cc.CC_SW), 'sw.js is valid JS');
+  assert.match(cc.CC_ICON_SVG, /^<svg/);
+});

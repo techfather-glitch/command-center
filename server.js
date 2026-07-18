@@ -2343,6 +2343,66 @@ function securityHeaders(req) {
     return h;
 }
 
+/* ══════════ PWA — installable home-screen app + real icons ══════════
+   Phones don't pick up a JS-injected SVG favicon and need PNG app icons + a web
+   manifest to install. We rasterize the Command Center mark to PNG with a tiny
+   zero-dependency software renderer (supersampled shape SDFs → a hand-rolled PNG
+   encoder over zlib), generated once per size and cached. */
+let _crcTable;
+function crc32(buf) {
+    if (!_crcTable) { _crcTable = new Int32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); _crcTable[n] = c; } }
+    let c = -1; for (let i = 0; i < buf.length; i++) c = _crcTable[(c ^ buf[i]) & 0xFF] ^ (c >>> 8); return (c ^ -1) >>> 0;
+}
+function pngEncode(N, rgba) {
+    const rowLen = N * 4 + 1, raw = Buffer.alloc(N * rowLen);
+    for (let y = 0; y < N; y++) { raw[y * rowLen] = 0; rgba.copy(raw, y * rowLen + 1, y * N * 4, (y + 1) * N * 4); }
+    const idat = zlib.deflateSync(raw, { level: 9 });
+    const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length, 0); const body = Buffer.concat([Buffer.from(type, 'ascii'), data]); const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body), 0); return Buffer.concat([len, body, crc]); };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(N, 0); ihdr.writeUInt32BE(N, 4); ihdr[8] = 8; ihdr[9] = 6;   // 8-bit RGBA
+    return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0))]);
+}
+function _segDist(px, py, ax, ay, bx, by) { const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy; let t = L ? ((px - ax) * dx + (py - ay) * dy) / L : 0; t = t < 0 ? 0 : t > 1 ? 1 : t; return Math.hypot(px - (ax + t * dx), py - (ay + t * dy)); }
+function ccIconPng(N, inset) {
+    inset = inset || 0;
+    const sc = (N - 2 * inset) / 120;
+    const bg = [11, 15, 20], ink = [255, 255, 255], teal = [45, 212, 191], gray = [128, 140, 146];
+    const brackets = [[57, 42, 41, 51], [41, 51, 41, 69], [41, 69, 57, 78], [63, 42, 79, 51], [79, 51, 79, 69], [79, 69, 63, 78]];
+    const ticks = [[60, 2, 60, 13], [107, 60, 118, 60], [60, 107, 60, 118], [2, 60, 13, 60]];
+    const buf = Buffer.alloc(N * N * 4), AA = 3, nA = AA * AA;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        let r = 0, g = 0, b = 0;
+        for (let sy = 0; sy < AA; sy++) for (let sx = 0; sx < AA; sx++) {
+            const vx = (x + (sx + 0.5) / AA - inset) / sc, vy = (y + (sy + 0.5) / AA - inset) / sc;
+            let col = bg;
+            const dc = Math.hypot(vx - 60, vy - 60);
+            if (Math.abs(dc - 46) < 2) col = gray;
+            for (let k = 0; k < 4; k++) { const t = ticks[k]; if (_segDist(vx, vy, t[0], t[1], t[2], t[3]) < 3) { col = teal; break; } }
+            for (let k = 0; k < 6; k++) { const s = brackets[k]; if (_segDist(vx, vy, s[0], s[1], s[2], s[3]) < 5.5) { col = ink; break; } }
+            if (dc < 6.5) col = teal;
+            r += col[0]; g += col[1]; b += col[2];
+        }
+        const i = (y * N + x) * 4; buf[i] = Math.round(r / nA); buf[i + 1] = Math.round(g / nA); buf[i + 2] = Math.round(b / nA); buf[i + 3] = 255;
+    }
+    return pngEncode(N, buf);
+}
+const _iconCache = {};
+function ccIcon(key) {
+    if (!_iconCache[key]) _iconCache[key] = key === '512' ? ccIconPng(512, 0) : key === 'maskable' ? ccIconPng(512, 52) : key === 'apple' ? ccIconPng(180, 0) : ccIconPng(192, 0);
+    return _iconCache[key];
+}
+const CC_ICON_SVG = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120' fill='none'><style>.ink{stroke:#0b0f12}@media(prefers-color-scheme:dark){.ink{stroke:#ffffff}}</style><circle cx='60' cy='60' r='46' class='ink' stroke-opacity='0.4' stroke-width='4' stroke-dasharray='38 22'/><g stroke='#2DD4BF' stroke-width='6' stroke-linecap='round'><path d='M60 1 V13'/><path d='M119 60 H107'/><path d='M60 119 V107'/><path d='M1 60 H13'/></g><g class='ink' stroke-width='11' stroke-linecap='round' stroke-linejoin='round'><path d='M57 42 L41 51 L41 69 L57 78'/><path d='M63 42 L79 51 L79 69 L63 78'/></g><circle cx='60' cy='60' r='6.5' fill='#2DD4BF'/></svg>";
+const CC_MANIFEST = JSON.stringify({
+    name: 'Command Center', short_name: 'Command Center', description: 'Mission control for your homelab',
+    start_url: '/', scope: '/', display: 'standalone', orientation: 'any', background_color: '#0b0f14', theme_color: '#0b0f14',
+    icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icon-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+    ],
+});
+const CC_SW = "const C='cc-shell-v1';\nself.addEventListener('install',function(e){self.skipWaiting();});\nself.addEventListener('activate',function(e){e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.filter(function(k){return k!==C;}).map(function(k){return caches.delete(k);}));}).then(function(){return self.clients.claim();}));});\nself.addEventListener('fetch',function(e){var req=e.request;if(req.method!=='GET')return;var u=new URL(req.url);if(u.origin!==self.location.origin)return;if(u.pathname.indexOf('/api/')===0)return;e.respondWith(fetch(req).then(function(r){if(r&&r.ok){var rc=r.clone();caches.open(C).then(function(c){c.put(req,rc);}).catch(function(){});}return r;}).catch(function(){return caches.match(req).then(function(m){return m||caches.match('/');});}));});";
+
 /* ═══════════════════════════ DEMO MODE ═══════════════════════════
    `DEMO=1` serves a realistic, fully synthetic homelab so the UI is explorable
    with zero configuration — and so documentation screenshots contain no real
@@ -2819,6 +2879,22 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'font/woff2', 'Cache-Control': 'public, max-age=2592000, immutable' });
             res.end(data);
         });
+    } else if ((req.url === '/manifest.webmanifest' || req.url === '/manifest.json') && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'public, max-age=3600' });
+        res.end(CC_MANIFEST);
+    } else if (req.url === '/icon.svg' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml', 'Cache-Control': 'public, max-age=604800' });
+        res.end(CC_ICON_SVG);
+    } else if (req.url === '/sw.js' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/' });
+        res.end(CC_SW);
+    } else if ((req.url === '/icon-192.png' || req.url === '/icon-512.png' || req.url === '/icon-maskable.png' || req.url === '/apple-touch-icon.png') && req.method === 'GET') {
+        try {
+            const key = req.url === '/icon-512.png' ? '512' : req.url === '/icon-maskable.png' ? 'maskable' : req.url === '/apple-touch-icon.png' ? 'apple' : '192';
+            const png = ccIcon(key);
+            res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800, immutable' });
+            res.end(png);
+        } catch (e) { res.writeHead(500, { 'Content-Type': 'text/plain' }); res.end('icon error'); }
     } else if (req.url === '/api/meta') {
         // Live system metadata for Settings → About / Automation / intelligence.
         // Everything here is measured, not configured — no fabricated values.
@@ -3912,4 +3988,4 @@ if (require.main === module) {
 
 // Pure/utility functions surfaced for the smoke-test suite (test/smoke.test.js).
 // Thanks to the require.main guard above, importing this module starts nothing.
-module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl, isPrivateHostname, tlsRelaxedFor, describeNetErr, storedCredential, summarizeUnifi, unifiDeviceKind, summarizeUnifiDevice };
+module.exports = { INTEGRATIONS, hashPassword, verifyPassword, igApplyTpl, securityHeaders, isSecretPlaceholder, SECRET_SENTINEL, escapeJsonForScript, ipZone, assertFetchTarget, sessionCookie, isSecureRequest, SECRET_FIELDS, signSession, hasSession, serviceProbeBase, isLoopbackUrl, isPrivateHostname, tlsRelaxedFor, describeNetErr, storedCredential, summarizeUnifi, unifiDeviceKind, summarizeUnifiDevice, ccIcon, CC_MANIFEST, CC_SW, CC_ICON_SVG };

@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.19] — 2026-07-17
+
+### Fixed
+- **Installable PWA + working mobile icons.** The old tab icon was injected by JavaScript as an SVG
+  data-URI, which phones don't pick up — so there was no home-screen icon and it wouldn't install.
+  Command Center now serves a proper **web manifest**, real **PNG app icons** (192 / 512 / maskable,
+  rendered server-side with zero dependencies), an **apple-touch-icon** for iOS, a theme-aware **SVG
+  favicon**, and a **service worker**. It installs to your phone's home screen with the real logo and
+  runs standalone (its own window). Use your browser's **Add to Home Screen / Install**.
+  - Android's install *prompt* needs a secure context — open the dashboard over your **https** reverse-proxy
+    domain and it becomes installable; iOS "Add to Home Screen" works over plain LAN too. The service
+    worker caches the app shell for offline and never intercepts `/api/` (live data + SSE always hit the network).
+
 ## [2.9.18] — 2026-07-17
 
 ### Changed
