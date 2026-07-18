@@ -661,6 +661,30 @@
     .dash-edit-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
     .dash-edit.on { border-color: var(--live); color: var(--live); }
     .dash-edit-hint { font-size: 12px; color: var(--faint); }
+    /* ── Home board: every KPI/panel/tile is a draggable, resizable block ── */
+    .home-board { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; align-items: start; margin-bottom: 16px; }
+    .hb-block { position: relative; min-width: 0; }
+    .hb-inner { display: flow-root; }
+    .hb-inner > * { margin: 0 !important; }
+    .home-board .st-tile { border: 1px solid var(--hair); border-radius: var(--r); }
+    .home-board.editing .hb-block { cursor: grab; outline: 1px dashed var(--hair-2); outline-offset: 3px; border-radius: 12px; touch-action: none; }
+    .home-board.editing .hb-block:hover { outline-color: var(--accent); }
+    .home-board.editing .hb-inner { pointer-events: none; }
+    .hb-block.hb-ghost { opacity: .3; }
+    .hb-block.hb-ghost .hb-inner { visibility: hidden; }
+    .hb-block.hb-sizing { outline: 1px dashed var(--accent) !important; }
+    .hb-clone { box-shadow: 0 18px 44px rgba(0,0,0,.45); border-radius: 12px; opacity: .97; }
+    .hb-hide { position: absolute; top: 5px; right: 5px; z-index: 4; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; border: 1px solid var(--hair-2); background: var(--s1); color: var(--faint); font-size: 11px; cursor: pointer; pointer-events: auto; }
+    .hb-hide:hover { color: var(--crit); border-color: var(--crit); }
+    .hb-resize { position: absolute; right: 2px; bottom: 2px; z-index: 4; width: 18px; height: 18px; cursor: nwse-resize; pointer-events: auto; }
+    .hb-resize::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); }
+    .home-board.editing .hb-block:hover .hb-resize::after { border-color: var(--accent); }
+    .hb-tray { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 16px; padding: 10px 12px; border: 1px dashed var(--hair-2); border-radius: 10px; }
+    .hb-tray-lbl { font-size: 12px; color: var(--faint); }
+    .hb-tray-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--hair-2); background: var(--s1); color: var(--muted); cursor: pointer; }
+    .hb-tray-chip:hover { color: var(--text); border-color: var(--accent); }
+    .hb-reset { color: var(--faint); }
+    @media (max-width: 600px) { .home-board { grid-template-columns: 1fr; } .home-board .hb-block { grid-column: 1 / -1 !important; } .hb-resize { display: none; } }
     .ig-card { padding: 16px; }
     .ig-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
     .ig-head .svc-ico-img, .ig-head .svc-ico { width: 24px; height: 24px; border-radius: 7px; flex: 0 0 auto; }
@@ -3757,58 +3781,138 @@ PAGES.dashboard = function () {
     if (v.state === 'welcome') return homeWelcome();
     return `<div class="home-view">
         ${homeWeather()}
-        ${deckVitals(v)}
-        ${deckAttention(v)}
-        ${deckLiveBand()}
-        ${deckChange()}
-        ${fleetSummary()}
-        ${homeActions()}
-        ${customTilesSection()}
+        ${renderHomeBoard(v)}
         ${homeFoot()}
     </div>`;
 };
 /* — Band 1: seven glanceable vitals. Every tile answers one deck question and
    clicks through to the page that owns it. — */
-function deckVitals(v) {
+function vitalsTiles(v) {
     const h = Store.host || {}, u = Store.unifi || {}, w = u.wan || {};
     const tr = tracearrSummary();
-    const tiles = [];
-    // Health
-    tiles.push(stTile(v.state === 'offline'
+    const T = {};
+    T.health = stTile(v.state === 'offline'
         ? { label: 'Health', fig: '···', sub: 'reconnecting · last good ' + fmtAgo(Store.lastUpdate), state: 'crit', onclick: "location.hash='#/alerts'" }
         : v.state === 'healthy'
         ? { label: 'Health', fig: '✓', sub: `${onlineServices().length}/${Store.services.length} services up`, onclick: "location.hash='#/alerts'" }
-        : { label: 'Health', fig: String(v.count), sub: `${v.crit ? v.crit + ' critical · ' : ''}${v.warn} warning`, state: v.crit ? 'crit' : 'warn', onclick: "location.hash='#/alerts'" }));
-    // Streams
+        : { label: 'Health', fig: String(v.count), sub: `${v.crit ? v.crit + ' critical · ' : ''}${v.warn} warning`, state: v.crit ? 'crit' : 'warn', onclick: "location.hash='#/alerts'" });
     const trErr = Store.tracearr && Store.tracearr.error;
-    tiles.push(stTile(trErr
+    T.streams = stTile(trErr
         ? { label: 'Streams', fig: '—', sub: 'Tracearr unreachable', state: 'warn', onclick: "location.hash='#/media'" }
-        : { label: 'Streams', fig: String(tr.total || 0), sub: tr.total ? (tr.transcodes ? `${tr.transcodes} transcoding` : esc(tr.totalBitrate || 'direct play')) : 'no playback now', state: tr.total ? 'live' : '', series: History.mediaBitrate, onclick: "location.hash='#/media'" }));
-    // WAN
+        : { label: 'Streams', fig: String(tr.total || 0), sub: tr.total ? (tr.transcodes ? `${tr.transcodes} transcoding` : esc(tr.totalBitrate || 'direct play')) : 'no playback now', state: tr.total ? 'live' : '', series: History.mediaBitrate, onclick: "location.hash='#/media'" });
     const wanKnown = u.configured !== false && !u.error;
     const wp = thruParts(w.rate != null ? w.rate : w.rxRate);
-    tiles.push(stTile(!wanKnown || !u.wan
+    T.wan = stTile(!wanKnown || !u.wan
         ? { label: 'WAN', warm: 1, sub: u.error ? 'UniFi unreachable' : 'connect UniFi', onclick: "location.hash='#/networking'" }
-        : { label: 'WAN', fig: wp[0], unit: wp[1], sub: w.up === false ? 'link down' : `${esc(w.isp || 'up')}${w.latency != null ? ' · ' + Math.round(w.latency) + ' ms' : ''}`, state: w.up === false ? 'crit' : '', series: History.wanDown, dedup: true, onclick: "location.hash='#/networking'" }));
-    // CPU
+        : { label: 'WAN', fig: wp[0], unit: wp[1], sub: w.up === false ? 'link down' : `${esc(w.isp || 'up')}${w.latency != null ? ' · ' + Math.round(w.latency) + ' ms' : ''}`, state: w.up === false ? 'crit' : '', series: History.wanDown, dedup: true, onclick: "location.hash='#/networking'" });
     const cpu = h.cpuPct;
-    tiles.push(stTile(h.error || cpu == null
+    T.cpu = stTile(h.error || cpu == null
         ? { label: 'CPU', warm: 1, sub: h.error ? 'host sensors unreachable' : 'warming up', onclick: "location.hash='#/compute'" }
-        : { label: 'CPU', fig: String(Math.round(cpu)), unit: '%', sub: `load ${h.load1 != null ? h.load1.toFixed(1) : '—'} · ${h.cores || '—'} cores`, state: cpu >= 90 ? 'crit' : cpu >= 75 ? 'warn' : '', series: History.cpu, onclick: "location.hash='#/compute'" }));
-    // Memory (pressure-honest)
+        : { label: 'CPU', fig: String(Math.round(cpu)), unit: '%', sub: `load ${h.load1 != null ? h.load1.toFixed(1) : '—'} · ${h.cores || '—'} cores`, state: cpu >= 90 ? 'crit' : cpu >= 75 ? 'warn' : '', series: History.cpu, onclick: "location.hash='#/compute'" });
     const mp = memPressureInfo(h);
-    tiles.push(stTile(!mp
+    T.memory = stTile(!mp
         ? { label: 'Memory', warm: 1, sub: '', onclick: "location.hash='#/compute'" }
-        : { label: 'Memory', fig: String(Math.round(h.memPct)), unit: '%', sub: `${fmtBytes(mp.arc ? mp.effAvail : h.memAvail)} freeable`, state: mp.state, series: History.mem, onclick: "location.hash='#/compute'" }));
-    // Storage (worst pool)
+        : { label: 'Memory', fig: String(Math.round(h.memPct)), unit: '%', sub: `${fmtBytes(mp.arc ? mp.effAvail : h.memAvail)} freeable`, state: mp.state, series: History.mem, onclick: "location.hash='#/compute'" });
     const pools = poolUsageList(), worst = pools.slice().sort((a, b) => b.pct - a.pct)[0];
-    tiles.push(stTile(!worst
+    T.storage = stTile(!worst
         ? { label: 'Storage', warm: 1, sub: 'no pools reported', onclick: "location.hash='#/storage'" }
-        : { label: 'Storage', fig: String(Math.round(worst.pct)), unit: '%', sub: `${esc(worst.name)} · fullest pool`, state: worst.pct >= 90 ? 'crit' : worst.pct >= 82 ? 'warn' : '', meter: worst.pct, onclick: "location.hash='#/storage'" }));
-    // Changes this session
+        : { label: 'Storage', fig: String(Math.round(worst.pct)), unit: '%', sub: `${esc(worst.name)} · fullest pool`, state: worst.pct >= 90 ? 'crit' : worst.pct >= 82 ? 'warn' : '', meter: worst.pct, onclick: "location.hash='#/storage'" });
     const acts = activityFeed();
-    tiles.push(stTile({ label: 'Changes', fig: String(acts.length), sub: acts.length ? `latest ${fmtAgo(acts[0].ts)}` : 'steady this session', state: acts.length && acts[0].state === 'critical' ? 'warn' : '', onclick: "document.querySelector('.deck-change') && document.querySelector('.deck-change').scrollIntoView({behavior:'smooth'})" }));
-    return `<div class="deck-vitals">${tiles.join('')}</div>`;
+    T.changes = stTile({ label: 'Changes', fig: String(acts.length), sub: acts.length ? `latest ${fmtAgo(acts[0].ts)}` : 'steady this session', state: acts.length && acts[0].state === 'critical' ? 'warn' : '', onclick: "document.querySelector('.deck-change') && document.querySelector('.deck-change').scrollIntoView({behavior:'smooth'})" });
+    return T;
+}
+function deckVitals(v) { const T = vitalsTiles(v); return `<div class="deck-vitals">${[T.health, T.streams, T.wan, T.cpu, T.memory, T.storage, T.changes].join('')}</div>`; }
+/* ═══════════ HOME BOARD — full drag-and-drop customization ═══════════
+   Every home element (each KPI, each panel, each integration tile) is a block on
+   one responsive 12-column grid. In Customize mode any block can be dragged to a new
+   spot (true pointer drag — mouse + touch, with a floating clone and live insertion),
+   resized by its corner (column span), or hidden; the arrangement persists to
+   settings.homeBoard = { order:[ids], width:{id:cols}, hidden:{id:1} }. */
+function boardCfg() { const c = (Store.settings && Store.settings.homeBoard) || {}; return { order: Array.isArray(c.order) ? c.order.slice() : [], width: Object.assign({}, c.width), hidden: Object.assign({}, c.hidden) }; }
+function commitBoard(c) { Store.settings = Object.assign({}, Store.settings, { homeBoard: c }); saveSettings({ homeBoard: c }, 'Layout saved').catch(() => {}); }
+window.resetBoard = function () { commitBoard({ order: [], width: {}, hidden: {} }); render(); };
+window.hideBlock = function (id) { const c = boardCfg(); c.hidden[id] = 1; commitBoard(c); render(); };
+window.showBlock = function (id) { const c = boardCfg(); delete c.hidden[id]; commitBoard(c); render(); };
+function homeBlockDefs(v) {
+    const V = vitalsTiles(v);
+    const raw = [
+        { id: 'kpi:health', label: 'Health', w: 3, html: V.health },
+        { id: 'kpi:streams', label: 'Streams', w: 3, html: V.streams },
+        { id: 'kpi:wan', label: 'WAN', w: 3, html: V.wan },
+        { id: 'kpi:cpu', label: 'CPU', w: 3, html: V.cpu },
+        { id: 'kpi:memory', label: 'Memory', w: 3, html: V.memory },
+        { id: 'kpi:storage', label: 'Storage', w: 3, html: V.storage },
+        { id: 'kpi:changes', label: 'Changes', w: 3, html: V.changes },
+        { id: 'attention', label: 'Needs attention', w: 12, html: deckAttention(v) },
+        { id: 'live', label: 'Live activity', w: 12, html: deckLiveBand() },
+        { id: 'change', label: 'Recent changes', w: 12, html: deckChange() },
+        { id: 'fleet', label: 'Fleet', w: 12, html: fleetSummary() },
+        { id: 'actions', label: 'Quick actions', w: 12, html: homeActions() }
+    ];
+    orderedTiles().forEach(t => raw.push({ id: t.key, label: (t.def && t.def.title) || (t.tile && t.tile.title) || 'Tile', w: 3, html: t.kind === 'ig' ? igTile(t.def) : renderCustomTile(t.tile) }));
+    if (!orderedTiles().length) { let disc = []; try { disc = discoverIntegrations() || []; } catch (e) {} if (disc.length) raw.push({ id: 'discover', label: 'Discover', w: 12, html: `<div class="ig-discover ig-discover-dash"><span class="ig-disc-ico">✨</span><div class="ig-disc-body"><b>${disc.length} service${disc.length === 1 ? '' : 's'} ready to add as live tiles</b> — click to connect: ${disc.slice(0, 12).map(d => `<button class="ig-disc-chip" onclick="igGoSetup('${d.id}')">${esc(d.title)}</button>`).join(' ')}</div></div>` }); }
+    return raw.filter(d => d.html && String(d.html).trim());
+}
+function renderHomeBoard(v) {
+    const defs = homeBlockDefs(v);
+    const cfg = boardCfg();
+    const pos = new Map(); cfg.order.forEach((id, i) => pos.set(id, i));
+    defs.sort((a, b) => (pos.has(a.id) ? pos.get(a.id) : 1e6) - (pos.has(b.id) ? pos.get(b.id) : 1e6));
+    const ed = _editLayout;
+    const wof = d => Math.max(1, Math.min(12, cfg.width[d.id] != null ? Number(cfg.width[d.id]) : d.w));
+    const visible = [], hidden = [];
+    defs.forEach(d => { (cfg.hidden[d.id] ? hidden : visible).push(d); });
+    const block = d => `<div class="hb-block" data-block="${esc(d.id)}" data-w="${wof(d)}" style="grid-column:span ${wof(d)}"><div class="hb-inner">${d.html}</div>${ed ? `<button class="hb-hide" title="Hide" aria-label="Hide block" onclick="hideBlock('${esc(d.id)}')">✕</button><span class="hb-resize" title="Drag to resize width"></span>` : ''}</div>`;
+    const bar = `<div class="dash-edit-bar"><button class="tbtn dash-edit ${ed ? 'on' : ''}" onclick="toggleEditLayout()">${ed ? '✓ Done' : '⤢ Customize home'}</button>${ed ? '<span class="dash-edit-hint">Drag any block to move it · drag the ◢ corner to resize · ✕ hides it · saves automatically</span><button class="tbtn hb-reset" onclick="resetBoard()">Reset layout</button>' : ''}</div>`;
+    const tray = (ed && hidden.length) ? `<div class="hb-tray"><span class="hb-tray-lbl">Hidden — tap to restore</span>${hidden.map(d => `<button class="hb-tray-chip" onclick="showBlock('${esc(d.id)}')">＋ ${esc(d.label)}</button>`).join('')}</div>` : '';
+    return `${bar}<div class="home-board${ed ? ' editing' : ''}" id="homeBoard">${visible.map(block).join('')}</div>${tray}`;
+}
+function startBoardDrag(e, blk, board) {
+    e.preventDefault();
+    _dragKey = blk.dataset.block;
+    const rect = blk.getBoundingClientRect(), offX = e.clientX - rect.left, offY = e.clientY - rect.top;
+    const clone = blk.cloneNode(true); clone.classList.add('hb-clone'); clone.classList.remove('hb-ghost');
+    clone.querySelectorAll('.hb-hide,.hb-resize').forEach(x => x.remove());
+    Object.assign(clone.style, { position: 'fixed', left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', height: rect.height + 'px', margin: '0', zIndex: '3000', pointerEvents: 'none' });
+    document.body.appendChild(clone); blk.classList.add('hb-ghost');
+    const move = ev => {
+        clone.style.left = (ev.clientX - offX) + 'px'; clone.style.top = (ev.clientY - offY) + 'px';
+        clone.style.display = 'none'; const under = document.elementFromPoint(ev.clientX, ev.clientY); clone.style.display = '';
+        const over = under && under.closest && under.closest('.hb-block');
+        if (over && over !== blk && over.parentNode === board) { const r = over.getBoundingClientRect(); board.insertBefore(blk, (ev.clientX > r.left + r.width / 2) ? over.nextSibling : over); }
+    };
+    const up = () => {
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+        clone.remove(); blk.classList.remove('hb-ghost'); _dragKey = null;
+        const c = boardCfg(); c.order = [].slice.call(board.querySelectorAll('.hb-block')).map(b => b.dataset.block); commitBoard(c);
+    };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+}
+function startBoardResize(e, handle, board) {
+    e.preventDefault(); e.stopPropagation();
+    const blk = handle.closest('.hb-block'), key = blk.dataset.block;
+    const cs = getComputedStyle(board), cols = (cs.gridTemplateColumns.match(/\S+/g) || []).length || 12, gap = parseFloat(cs.columnGap || cs.gap) || 12;
+    const colW = (board.clientWidth - (cols - 1) * gap) / Math.max(1, cols);
+    const startX = e.clientX, startW = Math.max(1, Math.min(cols, Number(blk.dataset.w) || 1));
+    let curW = startW; _resizing = true; _dragKey = key; document.body.style.userSelect = 'none'; blk.classList.add('hb-sizing');
+    const move = ev => { curW = Math.max(1, Math.min(cols, startW + Math.round((ev.clientX - startX) / colW))); blk.style.gridColumn = 'span ' + curW; blk.dataset.w = curW; };
+    const up = () => {
+        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
+        _resizing = false; _dragKey = null; document.body.style.userSelect = ''; blk.classList.remove('hb-sizing');
+        const c = boardCfg(); c.width[key] = curW; commitBoard(c);
+    };
+    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
+}
+function initBoard() {
+    document.addEventListener('pointerdown', e => {
+        if (!_editLayout) return;
+        const board = document.getElementById('homeBoard'); if (!board) return;
+        const rh = e.target.closest && e.target.closest('.hb-resize'); if (rh) { startBoardResize(e, rh, board); return; }
+        if (e.target.closest && e.target.closest('.hb-hide')) return;
+        const blk = e.target.closest && e.target.closest('.hb-block'); if (!blk || blk.parentNode !== board) return;
+        startBoardDrag(e, blk, board);
+    });
+    document.addEventListener('dragstart', e => { if (_editLayout && e.target.closest && e.target.closest('#homeBoard')) e.preventDefault(); });   // kill native image drag while customizing
 }
 /* — Band 2: what needs attention. Issues only; a healthy fleet earns one calm line, not a wall. — */
 function deckAttention(v) {
@@ -7052,7 +7156,8 @@ if (window.__CC_DEMO__) {
     History.mediaBitrate = seed(N, i => 55000 + 8000 * Math.sin(i / 7));
 }
 render();         // first paint with whatever we have (settings injected)
-initTileDnd();    // enable drag-to-reorder on the dashboard tile grid
+initTileDnd();    // legacy tile-grid DnD (inert now the home board owns editing)
+initBoard();      // true pointer drag-and-drop + resize for the whole home board
 initCharts();     // hover crosshair + tooltip + synced time-range on live charts
 refreshIntegrations();   // integration catalog is static — fetch once (Settings + discovery), not every poll
 refreshAll().then(() => { refreshMeta().catch(() => {}); initOnboard(); });   // first-run setup decision after first data

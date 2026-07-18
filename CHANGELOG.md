@@ -4,6 +4,21 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.13] — 2026-07-17
+
+### Changed
+- **The whole home screen is now a customizable board.** Hit **Customize home** and every element —
+  each KPI (Health, Streams, WAN, CPU, Memory, Storage, Changes), every panel (needs-attention, live
+  activity, recent changes, fleet, quick actions), and every integration tile — becomes a block you
+  can rearrange with a **true pointer drag** (mouse *and* touch, with a floating preview that drops
+  into place), **resize** by dragging its corner (1–12 columns wide), or **hide**. Hidden blocks tuck
+  into a tray you can restore from, and **Reset layout** returns to defaults. The arrangement saves
+  automatically. Defaults mirror the previous layout, so nothing looks different until you start moving things.
+
+### Fixed
+- The old tile drag-and-drop used native HTML5 dragging — jumpy on desktop and completely dead on
+  touch. It's now a real pointer drag that works the same with a mouse or a finger.
+
 ## [2.9.12] — 2026-07-17
 
 ### Changed
