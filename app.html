@@ -710,10 +710,15 @@
     .uctl-seg button { height: 28px; padding: 0 10px; border: 0; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; border-right: 1px solid var(--hair-2); }
     .uctl-seg button:last-child { border-right: 0; }
     .uctl-seg button.on { color: #06231f; background: var(--live); }
-    .uctl-palette { display: inline-flex; gap: 4px; align-items: center; }
-    .uctl-sw { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--hair-2); cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
-    .uctl-sw:hover { transform: scale(1.15); }
-    .uctl-sw.on { outline: 2px solid var(--live); outline-offset: 1px; }
+    .uctl-colorbtn { display: inline-flex; align-items: center; gap: 7px; }
+    .uctl-colorbtn .uctl-cbdot { width: 13px; height: 13px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3), 0 0 0 1px var(--hair-2); }
+    .uctl-colorbtn .uctl-cbcar { font-size: 9px; opacity: .55; margin-left: -2px; }
+    .uctl-cpop { position: fixed; z-index: 1200; background: var(--bg-0); border: 1px solid var(--line-1); border-radius: 12px; padding: 10px; box-shadow: 0 16px 40px rgba(0,0,0,0.32); }
+    .uctl-cpop-cap { font-size: 11px; color: var(--muted); margin: 0 0 8px; letter-spacing: .02em; }
+    .uctl-cpop-grid { display: grid; grid-template-columns: repeat(5, 22px); gap: 8px; }
+    .uctl-sw { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--hair-2); cursor: pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); transition: transform var(--t-micro) var(--ease); }
+    .uctl-sw:hover { transform: scale(1.14); }
+    .uctl-sw.on { outline: 2px solid var(--live); outline-offset: 2px; }
     .uctl-btn.uctl-danger:hover { color: var(--crit); border-color: var(--crit); }
     .uctl-note { font-size: 11px; color: var(--faint); margin-top: 10px; }
     .uni-auth { display: flex; gap: 16px; flex-wrap: wrap; padding: 4px 0 2px; }
@@ -3634,6 +3639,7 @@ function obDone() {
 }
 
 function render() {
+    if (typeof closeColorPop === 'function') closeColorPop();
     _verdict = null;
     trackTransitions();
     renderNav();
@@ -5608,7 +5614,41 @@ window.unifiLedMode = async function (btn, id, mode) { if (await window.unifiLed
    handful, and only devices that actually expose led_override_color (led.colorCapable) get
    these swatches at all. */
 const UNIFI_LED_COLORS = ['#ffffff', '#2dd4bf', '#0091ff', '#00e5ff', '#00e676', '#ffea00', '#ff9100', '#ff1744', '#ff4fd8', '#8b5cf6'];
-window.unifiLedColor = async function (btn, id, color) { if (await window.unifiLed({ action: 'led', id: id, color: color }, btn)) { const seg = btn.parentElement; if (seg) seg.querySelectorAll('.uctl-sw').forEach(b => b.classList.toggle('on', b === btn)); } };
+// Color lives behind a single swatch button that opens a compact picker box — far less
+// clutter than a 10-swatch row on every device. The popover is body-anchored (so it's never
+// clipped) and self-dismisses on outside-click, scroll, Escape, or any re-render.
+let _cpopEl = null, _cpopId = null;
+function closeColorPop() {
+    if (_cpopEl) { _cpopEl.remove(); _cpopEl = null; _cpopId = null; }
+    document.removeEventListener('mousedown', _cpopOutside, true);
+    document.removeEventListener('keydown', _cpopKey, true);
+    window.removeEventListener('scroll', closeColorPop, true);
+}
+function _cpopOutside(e) { if (_cpopEl && !_cpopEl.contains(e.target) && !(e.target.closest && e.target.closest('.uctl-colorbtn'))) closeColorPop(); }
+function _cpopKey(e) { if (e.key === 'Escape') closeColorPop(); }
+window.unifiColorPop = function (btn, id, current) {
+    if (_cpopId === id) { closeColorPop(); return; }   // second click on the same device closes it
+    closeColorPop();
+    const cur = (current || '').toLowerCase();
+    const pop = document.createElement('div');
+    pop.className = 'uctl-cpop';
+    pop.innerHTML = `<div class="uctl-cpop-cap">LED color</div><div class="uctl-cpop-grid">${UNIFI_LED_COLORS.map(c => `<button class="uctl-sw${cur === c ? ' on' : ''}" style="background:${c}" onclick="unifiPickColor(this,'${esc(id)}','${c}')" aria-label="Set LED ${c}"></button>`).join('')}</div>`;
+    document.body.appendChild(pop);
+    const r = btn.getBoundingClientRect(), pr = pop.getBoundingClientRect();
+    let left = Math.min(r.left, window.innerWidth - pr.width - 10);
+    let top = r.bottom + 6;
+    if (top + pr.height + 8 > window.innerHeight) top = Math.max(8, r.top - pr.height - 6);
+    pop.style.left = Math.max(8, left) + 'px';
+    pop.style.top = top + 'px';
+    _cpopEl = pop; _cpopId = id;
+    setTimeout(() => { document.addEventListener('mousedown', _cpopOutside, true); document.addEventListener('keydown', _cpopKey, true); window.addEventListener('scroll', closeColorPop, true); }, 0);
+};
+window.unifiPickColor = async function (sw, id, color) {
+    if (sw.parentElement) sw.parentElement.querySelectorAll('.uctl-sw').forEach(b => b.classList.toggle('on', b === sw));
+    const ok = await window.unifiLed({ action: 'led', id: id, color: color }, sw);
+    if (ok) { const dot = document.querySelector('.uctl-colorbtn[data-cid="' + id + '"] .uctl-cbdot'); if (dot) dot.style.background = color; }
+    closeColorPop();
+};
 window.unifiRestart = async function (btn, mac, name) { if (!confirm('Restart ' + (name || 'this device') + '? It will drop offline for a minute or two.')) return; await window.unifiLed({ action: 'restart', mac: mac, confirm: true }, btn); };
 function netDeviceControl() {
     const devs = unifiDevicesAll(); if (!devs.length) return '';
@@ -5624,13 +5664,13 @@ function netDeviceControl() {
             <div class="uctl-actions">
                 <button class="uctl-btn${_uniLocating[d.mac] ? ' on' : ''}" data-loc="${esc(d.mac || '')}" ${d.mac ? '' : 'disabled'} onclick="unifiLocate(this,'${esc(d.mac || '')}')" title="Blink the LED to find this device (click again to stop)">${_uniLocating[d.mac] ? 'Stop' : 'Locate'}</button>
                 <span class="uctl-seg">${['on', 'off', 'default'].map(m => `<button class="${led === m ? 'on' : ''}" ${d.id ? '' : 'disabled'} onclick="unifiLedMode(this,'${esc(d.id || '')}','${m}')">${m === 'default' ? 'Auto' : m === 'on' ? 'On' : 'Off'}</button>`).join('')}</span>
-                ${(d.led && d.led.colorCapable) ? `<span class="uctl-palette" title="LED color">${UNIFI_LED_COLORS.map(c => `<button class="uctl-sw${color.toLowerCase() === c ? ' on' : ''}" style="background:${c}" ${d.id ? '' : 'disabled'} onclick="unifiLedColor(this,'${esc(d.id || '')}','${c}')" aria-label="Set LED ${c}"></button>`).join('')}</span>` : ''}
+                ${(d.led && d.led.colorCapable) ? `<button class="uctl-btn uctl-colorbtn" data-cid="${esc(d.id || '')}" ${d.id ? '' : 'disabled'} onclick="unifiColorPop(this,'${esc(d.id || '')}','${esc(color)}')" title="Set the LED color"><span class="uctl-cbdot" style="background:${esc(color)}"></span>Color<span class="uctl-cbcar">▾</span></button>` : ''}
                 <button class="uctl-btn uctl-danger" ${d.mac ? '' : 'disabled'} onclick="unifiRestart(this,'${esc(d.mac || '')}',${jstr(d.name || d.model || 'device')})" title="Reboot this device">Restart</button>
             </div>
         </div>`;
     }).join('');
     const keyNote = (Store.unifi && Store.unifi.integrationApi) ? `<div class="uctl-note" style="color:var(--warn);margin:0 0 10px">This instance uses API-key auth — the key's Integration API can't control LEDs. Switch its auth to username &amp; password in Settings to use these controls.</div>` : '';
-    return `<section class="lane">${head}<hr class="hair">${keyNote}<div class="lane-body uctl-list">${rows}</div><div class="uctl-note">Color swatches show only on devices with an RGB LED. Restart reboots the device (offline briefly). Locate and On / Off / Auto work on every device.</div></section>`;
+    return `<section class="lane">${head}<hr class="hair">${keyNote}<div class="lane-body uctl-list">${rows}</div><div class="uctl-note">The Color button opens a picker on devices with an RGB LED. Restart reboots the device (offline briefly). Locate and On / Off / Auto work on every device.</div></section>`;
 }
 PAGES.networking = function () {
     const u = Store.unifi;

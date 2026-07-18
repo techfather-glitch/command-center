@@ -4,6 +4,14 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.24] — 2026-07-18
+
+### Changed
+- **UniFi LED color is now a compact picker, not a swatch wall.** Each RGB-capable device used to show all
+  ten color dots inline on every row — a lot of clutter down the list. It's now a single **Color** button
+  (showing the current color) that opens a small picker box; pick a color and it closes. Locate / On / Off /
+  Auto / Restart are unchanged.
+
 ## [2.9.23] — 2026-07-18
 
 ### Fixed
