@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.30] — 2026-07-18
+
+### Added
+- **Pi-hole v6 support.** v6 replaced Pi-hole's entire API — the old `/admin/api.php` endpoint is gone —
+  so anyone running v6 had a dead tile. There is now a separate **Pi-hole (v6)** provider that signs in
+  with your **app password** (`POST /api/auth` → session SID) and reports **queries, blocked, blocking
+  state, gravity list size, active clients, cache size, CPU temperature, diagnostic messages** and an
+  **update-available** flag, with the blocked-percentage gauge.
+  - Use an **app password** (Pi-hole → Settings → Web interface / API) rather than your web password:
+    it bypasses 2FA and survives web-password changes.
+  - Your existing Pi-hole tile is now labelled **Pi-hole (v5)** and is otherwise untouched — v5 installs
+    keep working exactly as before. Pick whichever matches your Pi-hole.
+
 ## [2.9.29] — 2026-07-18
 
 ### Added

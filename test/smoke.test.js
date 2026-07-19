@@ -548,3 +548,45 @@ test('header-borne totals are preferred over page length, with safe fallbacks', 
     assert.doesNotThrow(() => g.normalize(body, c), 'ctx shape ' + JSON.stringify(c));
   }
 });
+
+// -- Pi-hole v6 session login: password -> session.sid -> X-FTL-SID on later calls --
+// v6 replaced the whole API, so v5 and v6 ship as separate adapters; v5 must stay untouched.
+test('Pi-hole v6 login descriptor matches the documented auth exchange', () => {
+  const v6 = cc.INTEGRATIONS.pihole6, v5 = cc.INTEGRATIONS.pihole;
+  const L = v6.login;
+  assert.equal(L.path, '/api/auth');
+  assert.equal(L.method, 'POST');
+  assert.equal(L.contentType, 'application/json');
+  assert.equal(L.apply, 'header');
+  assert.equal(L.applyName, 'X-FTL-SID');
+
+  // The templated body must resolve to exactly {"password": "<secret>"} - and must not leak
+  // the raw template if the credential is missing.
+  const built = {};
+  for (const [k, v] of Object.entries(L.body)) built[k] = cc.igApplyTpl(v, { cred: { password: 's3cret' }, cfg: {}, base: 'http://pi.hole' });
+  assert.deepEqual(built, { password: 's3cret' });
+  const empty = cc.igApplyTpl(L.body.password, { cred: {}, cfg: {}, base: '' });
+  assert.equal(empty, '', 'missing credential resolves empty, never a literal {{cred.password}}');
+
+  // tokenPath must locate session.sid in a documented auth response.
+  let tok = { session: { valid: true, sid: 'A1B2C3', csrf: 'z', validity: 1800 } };
+  L.tokenPath.split('.').forEach(k => { tok = tok == null ? tok : tok[k]; });
+  assert.equal(tok, 'A1B2C3');
+
+  // The single credential is a vaulted secret, and no username is requested.
+  assert.ok(cc.SECRET_FIELDS.has('password'), 'password is vaulted');
+  assert.equal(v6.auth.type, 'secret');
+
+  // padd is one call carrying the whole tile; blocking state must read as bad when off.
+  const off = v6.normalize({ padd: { blocking: 'disabled', queries: { total: 10, blocked: 0 } } }, {});
+  assert.equal((off.fields.find(f => f.label === 'Blocking') || {}).value, 'Off');
+  assert.equal((off.fields.find(f => f.label === 'Blocking') || {}).state, 'bad');
+  const on = v6.normalize({ padd: { blocking: 'enabled', queries: { total: 10, blocked: 5, percent_blocked: 50 } } }, {});
+  assert.equal(on.gauge.value, 50);
+
+  // v5 keeps its own legacy endpoint and query auth - existing installs must not be migrated.
+  assert.equal(v5.auth.type, 'query');
+  assert.equal(v5.requests[0].path, '/admin/api.php?summaryRaw');
+  assert.ok(!v5.login, 'v5 has no session login');
+  assert.notEqual(v5.id, v6.id);
+});
