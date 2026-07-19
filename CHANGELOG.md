@@ -4,6 +4,25 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.28] — 2026-07-18
+
+### Added
+- **Capability build — media & network (reads batch 5).**
+  - **Plex**: **library count**, which libraries are **mid-scan**, running **server jobs** with their progress
+    (listed by name), and the server **version**. Only the cheap single-object reads were added — Plex polls
+    every 20s and the statistics endpoints are too heavy for that loop.
+  - **Bazarr**: **which subtitle providers are throttled** and why ("Daily limit reached · retry 3h"),
+    **health issues** with their messages, the Bazarr **version**, and the Sonarr/Radarr versions it's bound to.
+  - **SABnzbd**: **downloaded today / this week**, and the **actual warning text** — the queue endpoint only
+    exposes a boolean, so a warning used to be invisible.
+  - **Tailscale**: **user count** and **users awaiting approval**, plus **auth keys expiring** within 14 days
+    and any already expired — the classic silent outage where a node can't re-authenticate.
+
+### Fixed
+- **Bazarr's "Providers" number was mislabeled.** `badges.providers` is the count of *throttled* providers,
+  not the total configured — so it read as a healthy inventory figure when it was actually a problem count.
+  It's now **"Throttled"**, shown as throttled/total, and amber when non-zero.
+
 ## [2.9.27] — 2026-07-18
 
 ### Added
