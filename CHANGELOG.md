@@ -4,6 +4,20 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.27] — 2026-07-18
+
+### Added
+- **Capability build — the \*arr family (reads batch 4).** Sonarr, Radarr, Lidarr and Prowlarr now report
+  the health data their APIs have always exposed:
+  - **Health** — a warning/error count, *and the actual messages listed on the tile* ("Unable to communicate
+    with qBittorrent", "Missing root folder: /movies"). With several instances this is what tells you
+    **which** one is unhappy instead of just that something is.
+  - **Disk free** — from `/diskspace`, reporting the **tightest mount** rather than the first, since a full
+    disk anywhere is what stops imports. Amber under 15% free, red under 5%.
+  - **Version** on the tile header, plus an **Update** field when a newer release is available.
+  - **Prowlarr** also gains **failing indexers** (from `/indexerstatus`, which lists only indexers in
+    failure/backoff) with their names and retry times, and an **apps-synced** count.
+
 ## [2.9.26] — 2026-07-18
 
 ### Added
