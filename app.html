@@ -681,13 +681,14 @@
     .home-board.editing .hb-inner { pointer-events: none; }
     .hb-block.hb-ghost { opacity: .3; }
     .hb-block.hb-ghost .hb-inner { visibility: hidden; }
-    .hb-block.hb-sizing { outline: 1px dashed var(--accent) !important; }
     .hb-clone { box-shadow: 0 18px 44px rgba(0,0,0,.45); border-radius: 12px; opacity: .97; }
     .hb-hide { position: absolute; top: 5px; right: 5px; z-index: 4; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; border: 1px solid var(--hair-2); background: var(--s1); color: var(--faint); font-size: 11px; cursor: pointer; pointer-events: auto; }
     .hb-hide:hover { color: var(--crit); border-color: var(--crit); }
-    .hb-resize { position: absolute; right: 2px; bottom: 2px; z-index: 4; width: 18px; height: 18px; cursor: nwse-resize; pointer-events: auto; }
-    .hb-resize::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-right: 2px solid var(--faint); border-bottom: 2px solid var(--faint); }
-    .home-board.editing .hb-block:hover .hb-resize::after { border-color: var(--accent); }
+    .hb-size { position: absolute; right: 5px; bottom: 5px; z-index: 4; display: inline-flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; border: 1px solid var(--hair-2); background: var(--s1); pointer-events: auto; }
+    .hb-size b { min-width: 26px; text-align: center; font-size: 10px; font-weight: 600; color: var(--muted); font-feature-settings: var(--tnum); }
+    .hb-step { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; border: 0; background: transparent; color: var(--faint); font-size: 13px; line-height: 1; cursor: pointer; }
+    .hb-step:hover:not(:disabled) { color: var(--accent); background: var(--s0); }
+    .hb-step:disabled { opacity: .3; cursor: default; }
     .hb-tray { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 0 16px; padding: 10px 12px; border: 1px dashed var(--hair-2); border-radius: 10px; }
     .hb-tray-lbl { font-size: 12px; color: var(--faint); }
     .hb-tray-chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--hair-2); background: var(--s1); color: var(--muted); cursor: pointer; }
@@ -725,7 +726,7 @@
     .uni-auth label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
     .uni-auth input { accent-color: var(--live); }
     .hb-reset { color: var(--faint); }
-    @media (max-width: 600px) { .home-board { grid-template-columns: 1fr; } .home-board .hb-block { grid-column: 1 / -1 !important; } .hb-resize { display: none; } }
+    @media (max-width: 600px) { .home-board { grid-template-columns: 1fr; } .home-board .hb-block { grid-column: 1 / -1 !important; } .hb-size { display: none; } }
     .ig-card { padding: 16px; }
     .ig-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; min-width: 0; }
     .ig-head .svc-ico-img, .ig-head .svc-ico { width: 24px; height: 24px; border-radius: 7px; flex: 0 0 auto; }
@@ -733,6 +734,7 @@
     .ig-ver { font: 500 10.5px/1 var(--mono); color: var(--t3); background: var(--s2); border: 1px solid var(--hair); padding: 3px 6px; border-radius: 5px; flex: 0 0 auto; letter-spacing: .02em; }
     .ig-head .dot { margin-left: 6px; }
     .ig-gauge { display: flex; justify-content: center; margin-bottom: 6px; }
+    .ig-trim { margin-top: 7px; font-size: 10px; color: var(--faint); letter-spacing: .02em; }
     .mval.good { color: var(--green); } .mval.warn { color: var(--yellow); } .mval.bad { color: var(--red); }
     .ig-bar { margin-bottom: 10px; } .ig-bar:last-child { margin-bottom: 0; }
     .ig-bar-h { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
@@ -3705,31 +3707,58 @@ function fmtWidgetField(f) {
    the id is a slug of the label so it survives value changes. */
 function fieldId(f) { return String((f && f.label) || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
 function hiddenFields(id) { const ig = (Store.settings && Store.settings.integrations) || {}; return (id && ig[id] && Array.isArray(ig[id].hiddenFields)) ? ig[id].hiddenFields : []; }
-function renderWidget(def, data) {
+/* Tile content scales with the block's column span on the home board: a quarter-width tile
+   shows fewer stats than a full-width one, and the last row is stretched to fill the grid so
+   every tile reads as a clean rectangle instead of a ragged 3+2. `span` is undefined outside
+   the board (Services page), which keeps the original auto-fit behaviour there. */
+const MINI_COLS = { 2: 2, 3: 3, 4: 3, 6: 4, 12: 6 };
+const FIELD_BUDGET = { 2: 4, 3: 6, 4: 9, 6: 12, 12: 18 };
+function spanKey(span) { return span >= 12 ? 12 : span >= 6 ? 6 : span >= 4 ? 4 : span >= 3 ? 3 : 2; }
+function miniCols(span) { return MINI_COLS[spanKey(span)]; }
+function fieldBudget(span) { return FIELD_BUDGET[spanKey(span)]; }
+function itemBudget(span) { return spanKey(span) >= 6 ? 10 : spanKey(span) >= 4 ? 8 : 6; }
+// Column spans that make the final (partial) row fill the grid exactly.
+function rowFill(n, cols) {
+    const s = new Array(n).fill(1);
+    const r = n <= cols ? n : (n % cols);
+    if (!r) return s;
+    const base = Math.floor(cols / r), extra = cols % r;
+    for (let i = 0; i < r; i++) s[n - r + i] = base + (i < extra ? 1 : 0);
+    return s;
+}
+function renderWidget(def, data, span) {
     if (!data) return '<div class="ig-load"><span class="spinner"></span></div>';
     if (data.ok === false) return `<div class="ig-err">⚠ ${esc(data.error || 'unavailable')}</div>`;
     const p = [];
     const hid = hiddenFields(def && def.id);
     if (data.gauge) { const g = data.gauge; const pct = g.max ? Math.max(0, Math.min(100, g.value / g.max * 100)) : g.value; const col = { good: 'var(--ok)', warn: 'var(--warn)', bad: 'var(--crit)' }[g.state]; p.push(`<div class="ig-gauge">${gauge(pct, g.label, g.value + (g.unit || ''), { sm: true, color: col })}</div>`); }
     const flds = Array.isArray(data.fields) ? data.fields.filter(f => !hid.includes(fieldId(f))) : [];
-    if (flds.length) p.push(`<div class="mini-stats">${flds.map(f => { const L = (f.value == null ? '' : String(f.value)).length; const fs = L > 8 ? 12 : L > 5 ? 14 : 18; return `<div class="mini"><div class="mlabel">${esc(f.label)}</div><div class="mval ${f.state || ''}" style="font-size:${fs}px">${fmtWidgetField(f)}</div></div>`; }).join('')}</div>`);
+    if (flds.length) {
+        const cols = span ? miniCols(span) : 0;
+        const shown = span ? flds.slice(0, fieldBudget(span)) : flds;
+        const fill = cols ? rowFill(shown.length, cols) : null;
+        const gstyle = cols ? ` style="grid-template-columns:repeat(${cols},minmax(0,1fr))"` : '';
+        p.push(`<div class="mini-stats"${gstyle}>${shown.map((f, i) => { const L = (f.value == null ? '' : String(f.value)).length; const fs = L > 8 ? 12 : L > 5 ? 14 : 18; const sp = (fill && fill[i] > 1) ? ` style="grid-column:span ${fill[i]}"` : ''; return `<div class="mini"${sp}><div class="mlabel">${esc(f.label)}</div><div class="mval ${f.state || ''}" style="font-size:${fs}px">${fmtWidgetField(f)}</div></div>`; }).join('')}</div>`);
+        // Never silently swallow data — say how much the current size is hiding.
+        if (shown.length < flds.length) p.push(`<div class="ig-trim">+${flds.length - shown.length} more · widen to show</div>`);
+    }
     if (Array.isArray(data.bars) && data.bars.length) p.push(`<div style="margin-top:10px">${data.bars.map(b => { const pct = b.max ? Math.round(b.value / b.max * 100) : Math.round(b.value); return `<div class="ig-bar"><div class="ig-bar-h"><span>${esc(b.label)}</span><span>${pct}${b.unit || '%'}</span></div><div class="meter-track" style="height:8px"><div class="meter-bar ${b.state || usageClass(pct)}" style="width:${Math.min(100, pct)}%"></div></div></div>`; }).join('')}</div>`);
     if (Array.isArray(data.series) && data.series.length > 1) p.push(`<div class="spark-wrap">${sparkline(data.series, { w: 280, h: 40, grad: ['#2dd4bf', '#a78bfa'] })}</div>`);
-    if (Array.isArray(data.items) && data.items.length) p.push(`<div class="ig-items">${data.items.slice(0, 6).map(it => `<div class="ig-item"><span class="dot ${it.state || 'idle'}"></span><span class="ig-item-l">${esc(it.label)}</span>${it.sub ? `<span class="ig-item-s">${esc(it.sub)}</span>` : ''}${it.value != null ? `<span class="ig-item-v sig-${it.state === 'good' ? 'good' : it.state === 'bad' ? 'low' : 'ok'}">${esc(String(it.value))}</span>` : ''}</div>`).join('')}</div>`);
+    if (Array.isArray(data.items) && data.items.length) p.push(`<div class="ig-items">${data.items.slice(0, span ? itemBudget(span) : 6).map(it => `<div class="ig-item"><span class="dot ${it.state || 'idle'}"></span><span class="ig-item-l">${esc(it.label)}</span>${it.sub ? `<span class="ig-item-s">${esc(it.sub)}</span>` : ''}${it.value != null ? `<span class="ig-item-v sig-${it.state === 'good' ? 'good' : it.state === 'bad' ? 'low' : 'ok'}">${esc(String(it.value))}</span>` : ''}</div>`).join('')}</div>`);
     return p.join('') || '<div class="ig-err">no data</div>';
 }
-function igTile(def) {
+function igTile(def, span) {
     const data = Store.widgets[def.id];
     const st = !data ? '' : data.ok === false ? 'bad' : 'good';
     const ver = data && data.version ? `<span class="ig-ver" title="Reported version">v${esc(String(data.version).replace(/^v/i, ''))}</span>` : '';
-    return `<div class="card ig-card"><div class="ig-head">${iconImg(def.title, 24)}<span class="ig-title">${esc(def.title)}</span>${ver}${openLinks(def.url || def.defaultUrl, def.externalUrl)}<span class="dot ${st || 'idle'}" style="margin-left:auto"></span></div><div class="ig-body">${renderWidget(def, data)}</div></div>`;
+    return `<div class="card ig-card"><div class="ig-head">${iconImg(def.title, 24)}<span class="ig-title">${esc(def.title)}</span>${ver}${openLinks(def.url || def.defaultUrl, def.externalUrl)}<span class="dot ${st || 'idle'}" style="margin-left:auto"></span></div><div class="ig-body">${renderWidget(def, data, span)}</div></div>`;
 }
 function customTiles() { return (Store.settings && Array.isArray(Store.settings.customTiles)) ? Store.settings.customTiles : []; }
-function renderCustomTile(t) {
+function renderCustomTile(t, span) {
     if (t.type === 'bookmark') return `<a class="card ig-card ct-link" href="${esc(t.url)}" target="_blank" rel="noopener"><div class="ig-head">${iconImg(t.title, 24)}<span class="ig-title">${esc(t.title)}</span><span class="svc-open">Open ↗</span></div><div class="ct-url">${esc(t.url)}</div></a>`;
     if (t.type === 'iframe') return `<div class="card ig-card ct-frame"><div class="ig-head"><span class="ig-title">${esc(t.title)}</span><a class="svc-open" href="${esc(t.url)}" target="_blank" rel="noopener">↗</a></div><iframe class="ct-iframe" src="${esc(t.url)}" style="height:${Number(t.height) || 220}px" loading="lazy" referrerpolicy="no-referrer"></iframe></div>`;
     const data = Store.widgets['ct_' + t.id];
-    return `<div class="card ig-card"><div class="ig-head">${iconImg(t.title, 24)}<span class="ig-title">${esc(t.title)}</span><span class="dot ${!data ? 'idle' : data.ok === false ? 'bad' : 'good'}"></span></div><div class="ig-body">${renderWidget({}, data)}</div></div>`;
+    return `<div class="card ig-card"><div class="ig-head">${iconImg(t.title, 24)}<span class="ig-title">${esc(t.title)}</span><span class="dot ${!data ? 'idle' : data.ok === false ? 'bad' : 'good'}"></span></div><div class="ig-body">${renderWidget({}, data, span)}</div></div>`;
 }
 function tileOrder() { return (Store.settings && Array.isArray(Store.settings.tileOrder)) ? Store.settings.tileOrder : []; }
 function orderedTiles() {
@@ -3896,6 +3925,22 @@ function commitBoard(c) { Store.settings = Object.assign({}, Store.settings, { h
 window.resetBoard = function () { commitBoard({ order: [], width: {}, hidden: {} }); render(); };
 window.hideBlock = function (id) { const c = boardCfg(); c.hidden[id] = 1; commitBoard(c); render(); };
 window.showBlock = function (id) { const c = boardCfg(); delete c.hidden[id]; commitBoard(c); render(); };
+/* Sizes step through divisors of 12 only, so rows always pack edge-to-edge — free-dragging
+   a block to 5 or 7 columns is what used to leave those ragged holes in the grid. */
+const SIZE_STEPS = [2, 3, 4, 6, 12];
+const SIZE_LABEL = { 2: '⅙', 3: '¼', 4: '⅓', 6: '½', 12: 'full' };
+function stepIndex(w) { let bi = 0, bd = 1e9; SIZE_STEPS.forEach((s, i) => { const d = Math.abs(s - w); if (d < bd) { bd = d; bi = i; } }); return bi; }
+function snapStep(w) { return SIZE_STEPS[stepIndex(Math.max(1, Math.min(12, Number(w) || 3)))]; }
+function sizeStepper(id, w) {
+    const i = stepIndex(w);
+    return `<span class="hb-size" title="Tile size — content adapts to fit"><button class="hb-step" ${i <= 0 ? 'disabled' : ''} onclick="stepBlock('${esc(id)}',-1)" aria-label="Smaller">−</button><b>${SIZE_LABEL[SIZE_STEPS[i]]}</b><button class="hb-step" ${i >= SIZE_STEPS.length - 1 ? 'disabled' : ''} onclick="stepBlock('${esc(id)}',1)" aria-label="Bigger">＋</button></span>`;
+}
+window.stepBlock = function (id, dir) {
+    const el = document.querySelector('.hb-block[data-block="' + String(id).replace(/"/g, '\\"') + '"]');
+    const cur = el ? Number(el.dataset.w) : 3;
+    const i = Math.max(0, Math.min(SIZE_STEPS.length - 1, stepIndex(cur) + dir));
+    const c = boardCfg(); c.width[id] = SIZE_STEPS[i]; commitBoard(c); render();
+};
 function homeBlockDefs(v) {
     const V = vitalsTiles(v);
     const raw = [
@@ -3912,9 +3957,11 @@ function homeBlockDefs(v) {
         { id: 'fleet', label: 'Fleet', w: 12, html: fleetSummary() },
         { id: 'actions', label: 'Quick actions', w: 12, html: homeActions() }
     ];
-    orderedTiles().forEach(t => raw.push({ id: t.key, label: (t.def && t.def.title) || (t.tile && t.tile.title) || 'Tile', w: 3, html: t.kind === 'ig' ? igTile(t.def) : renderCustomTile(t.tile) }));
+    // html is a function here so the tile can be rendered at whatever width the block ends up
+    // being — that's what lets content grow and shrink with the ＋ / − stepper.
+    orderedTiles().forEach(t => raw.push({ id: t.key, label: (t.def && t.def.title) || (t.tile && t.tile.title) || 'Tile', w: 3, html: (w) => t.kind === 'ig' ? igTile(t.def, w) : renderCustomTile(t.tile, w) }));
     if (!orderedTiles().length) { let disc = []; try { disc = discoverIntegrations() || []; } catch (e) {} if (disc.length) raw.push({ id: 'discover', label: 'Discover', w: 12, html: `<div class="ig-discover ig-discover-dash"><span class="ig-disc-ico">✨</span><div class="ig-disc-body"><b>${disc.length} service${disc.length === 1 ? '' : 's'} ready to add as live tiles</b> — click to connect: ${disc.slice(0, 12).map(d => `<button class="ig-disc-chip" onclick="igGoSetup('${d.id}')">${esc(d.title)}</button>`).join(' ')}</div></div>` }); }
-    return raw.filter(d => d.html && String(d.html).trim());
+    return raw.filter(d => typeof d.html === 'function' || (d.html && String(d.html).trim()));
 }
 function renderHomeBoard(v) {
     const defs = homeBlockDefs(v);
@@ -3922,11 +3969,15 @@ function renderHomeBoard(v) {
     const pos = new Map(); cfg.order.forEach((id, i) => pos.set(id, i));
     defs.sort((a, b) => (pos.has(a.id) ? pos.get(a.id) : 1e6) - (pos.has(b.id) ? pos.get(b.id) : 1e6));
     const ed = _editLayout;
-    const wof = d => Math.max(1, Math.min(12, cfg.width[d.id] != null ? Number(cfg.width[d.id]) : d.w));
+    const wof = d => snapStep(cfg.width[d.id] != null ? Number(cfg.width[d.id]) : d.w);
     const visible = [], hidden = [];
     defs.forEach(d => { (cfg.hidden[d.id] ? hidden : visible).push(d); });
-    const block = d => `<div class="hb-block" data-block="${esc(d.id)}" data-w="${wof(d)}" style="grid-column:span ${wof(d)}"><div class="hb-inner">${d.html}</div>${ed ? `<button class="hb-hide" title="Hide" aria-label="Hide block" onclick="hideBlock('${esc(d.id)}')">✕</button><span class="hb-resize" title="Drag to resize width"></span>` : ''}</div>`;
-    const bar = `<div class="dash-edit-bar"><button class="tbtn dash-edit ${ed ? 'on' : ''}" onclick="toggleEditLayout()">${ed ? '✓ Done' : '⤢ Customize home'}</button>${ed ? '<span class="dash-edit-hint">Drag any block to move it · drag the ◢ corner to resize · ✕ hides it · saves automatically</span><button class="tbtn hb-reset" onclick="resetBoard()">Reset layout</button>' : ''}</div>`;
+    const block = d => {
+        const w = wof(d);
+        const inner = typeof d.html === 'function' ? d.html(w) : d.html;
+        return `<div class="hb-block" data-block="${esc(d.id)}" data-w="${w}" style="grid-column:span ${w}"><div class="hb-inner">${inner}</div>${ed ? `<button class="hb-hide" title="Hide" aria-label="Hide block" onclick="hideBlock('${esc(d.id)}')">✕</button>${sizeStepper(d.id, w)}` : ''}</div>`;
+    };
+    const bar = `<div class="dash-edit-bar"><button class="tbtn dash-edit ${ed ? 'on' : ''}" onclick="toggleEditLayout()">${ed ? '✓ Done' : '⤢ Customize home'}</button>${ed ? '<span class="dash-edit-hint">Drag any block to move it · − / ＋ resizes it and the content adapts to fit · ✕ hides it · saves automatically</span><button class="tbtn hb-reset" onclick="resetBoard()">Reset layout</button>' : ''}</div>`;
     const tray = (ed && hidden.length) ? `<div class="hb-tray"><span class="hb-tray-lbl">Hidden — tap to restore</span>${hidden.map(d => `<button class="hb-tray-chip" onclick="showBlock('${esc(d.id)}')">＋ ${esc(d.label)}</button>`).join('')}</div>` : '';
     return `${bar}<div class="home-board${ed ? ' editing' : ''}" id="homeBoard">${visible.map(block).join('')}</div>${tray}`;
 }
@@ -3935,7 +3986,7 @@ function startBoardDrag(e, blk, board) {
     _dragKey = blk.dataset.block;
     const rect = blk.getBoundingClientRect(), offX = e.clientX - rect.left, offY = e.clientY - rect.top;
     const clone = blk.cloneNode(true); clone.classList.add('hb-clone'); clone.classList.remove('hb-ghost');
-    clone.querySelectorAll('.hb-hide,.hb-resize').forEach(x => x.remove());
+    clone.querySelectorAll('.hb-hide,.hb-size').forEach(x => x.remove());
     Object.assign(clone.style, { position: 'fixed', left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', height: rect.height + 'px', margin: '0', zIndex: '3000', pointerEvents: 'none' });
     document.body.appendChild(clone); blk.classList.add('hb-ghost');
     const move = ev => {
@@ -3951,27 +4002,11 @@ function startBoardDrag(e, blk, board) {
     };
     document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
 }
-function startBoardResize(e, handle, board) {
-    e.preventDefault(); e.stopPropagation();
-    const blk = handle.closest('.hb-block'), key = blk.dataset.block;
-    const cs = getComputedStyle(board), cols = (cs.gridTemplateColumns.match(/\S+/g) || []).length || 12, gap = parseFloat(cs.columnGap || cs.gap) || 12;
-    const colW = (board.clientWidth - (cols - 1) * gap) / Math.max(1, cols);
-    const startX = e.clientX, startW = Math.max(1, Math.min(cols, Number(blk.dataset.w) || 1));
-    let curW = startW; _resizing = true; _dragKey = key; document.body.style.userSelect = 'none'; blk.classList.add('hb-sizing');
-    const move = ev => { curW = Math.max(1, Math.min(cols, startW + Math.round((ev.clientX - startX) / colW))); blk.style.gridColumn = 'span ' + curW; blk.dataset.w = curW; };
-    const up = () => {
-        document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); document.removeEventListener('pointercancel', up);
-        _resizing = false; _dragKey = null; document.body.style.userSelect = ''; blk.classList.remove('hb-sizing');
-        const c = boardCfg(); c.width[key] = curW; commitBoard(c);
-    };
-    document.addEventListener('pointermove', move); document.addEventListener('pointerup', up); document.addEventListener('pointercancel', up);
-}
 function initBoard() {
     document.addEventListener('pointerdown', e => {
         if (!_editLayout) return;
         const board = document.getElementById('homeBoard'); if (!board) return;
-        const rh = e.target.closest && e.target.closest('.hb-resize'); if (rh) { startBoardResize(e, rh, board); return; }
-        if (e.target.closest && e.target.closest('.hb-hide')) return;
+        if (e.target.closest && (e.target.closest('.hb-hide') || e.target.closest('.hb-size'))) return;
         const blk = e.target.closest && e.target.closest('.hb-block'); if (!blk || blk.parentNode !== board) return;
         startBoardDrag(e, blk, board);
     });

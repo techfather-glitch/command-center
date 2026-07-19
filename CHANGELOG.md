@@ -4,7 +4,16 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.9.25] — 2026-07-18
+
+### Changed
+- **Home tiles resize with a ＋ / − stepper instead of a drag corner, and the content adapts.** Free-dragging
+  a corner let blocks land on widths like 5 or 7 columns, which left ragged holes in the grid. Sizes now step
+  through **⅙ · ¼ · ⅓ · ½ · full** — all divisors of the 12-column grid, so rows always pack edge to edge.
+- **Tiles show more or less information based on their size.** A ⅙-width tile shows 4 stats, ¼ shows 6, ⅓
+  shows 9, ½ shows 12, full shows 18 — and the stat grid's last row stretches to fill the width, so a tile
+  with 4 stats reads as a clean rectangle instead of a 3-plus-1 orphan. When a size hides fields, the tile
+  says **"+N more · widen to show"** rather than silently dropping them.
 
 ### Added
 - **Watchtower in `docker-compose.yml`** for hands-off updates: it pulls new Command Center releases and
