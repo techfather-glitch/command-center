@@ -654,19 +654,6 @@
     .up-bar.down { background: var(--red); }
 
     /* ---- Integration widget tiles ---- */
-    .ig-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); gap: 18px; }
-    .ig-slot { min-width: 0; position: relative; cursor: grab; }
-    .ig-slot > .card, .ig-slot > .ig-card { height: 100%; }
-    .ig-slot.dragging { opacity: .35; cursor: grabbing; }
-    .ig-slot.drop-into > .card { box-shadow: 0 0 0 2px var(--accent); }
-    /* — dashboard edit mode: move + corner-resize tiles — */
-    .ig-slot { cursor: default; }
-    .ig-grid.editing .ig-slot { cursor: grab; outline: 1px dashed var(--hair-2); outline-offset: 3px; border-radius: 13px; }
-    .ig-grid.editing .ig-slot.dragging { cursor: grabbing; }
-    .ig-slot.sized { align-self: start; }
-    .ig-slot.sized > .card, .ig-slot.sized > .ig-card { height: 100%; overflow: auto; }
-    .tile-resize { position: absolute; right: 3px; bottom: 3px; width: 20px; height: 20px; cursor: nwse-resize; border-radius: 4px; opacity: .75; z-index: 4; background: linear-gradient(135deg, transparent 42%, var(--live) 42%, var(--live) 52%, transparent 52%, transparent 66%, var(--live) 66%, var(--live) 76%, transparent 76%); touch-action: none; }
-    .tile-resize:hover { opacity: 1; }
     .dash-edit-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
     .dash-edit.on { border-color: var(--live); color: var(--live); }
     .dash-edit-hint { font-size: 12px; color: var(--faint); }
@@ -2973,7 +2960,7 @@ function isDrawerOpen() { const d = document.getElementById('drawer'); return !!
 // provider (an expanded Settings row). Those states own the DOM until the user is
 // done; the next tick catches up. This is what stops the config panel / catalog
 // from collapsing out from under you a few seconds after you open it.
-function uiInteracting() { return isEditingView() || _dragKey || _resizing || isDrawerOpen() || (route === 'settings' && !!igExpanded); }
+function uiInteracting() { return isEditingView() || _dragKey || isDrawerOpen() || (route === 'settings' && !!igExpanded); }
 async function refreshIntegrations() { try { Store.integrations = await jget('/api/integrations'); } catch (e) {} }
 function enabledIntegrations() { return (Store.integrations || []).filter(d => d.enabled); }
 async function refreshWidget(id) { try { Store.widgets[id] = await jpost('/api/widget', { type: id }); } catch (e) { Store.widgets[id] = { ok: false, error: e.message }; } }
@@ -3772,67 +3759,9 @@ function orderedTiles() {
         return ia - ib;
     }).map(x => x.t);
 }
-let _editLayout = false, _resizing = false;
-function tileSizes() { return (Store.settings && Store.settings.tileSize && typeof Store.settings.tileSize === 'object') ? Store.settings.tileSize : {}; }
+let _editLayout = false;
 window.toggleEditLayout = function () { _editLayout = !_editLayout; render(); };
-function renderIntegrationGrid() {
-    const tiles = orderedTiles();
-    if (!tiles.length) {
-        // Nothing enabled yet — if we discovered services on the network, offer
-        // them as one-click live tiles instead of leaving the row blank.
-        let disc = []; try { disc = discoverIntegrations() || []; } catch (e) {}
-        if (!disc.length) return '';
-        return `<div class="ig-discover ig-discover-dash" style="margin-bottom:18px"><span class="ig-disc-ico">✨</span><div class="ig-disc-body"><b>${disc.length} service${disc.length === 1 ? '' : 's'} ready to add as live tiles</b> — click to connect: ${disc.slice(0, 12).map(d => `<button class="ig-disc-chip" onclick="igGoSetup('${d.id}')">${esc(d.title)}</button>`).join(' ')}</div></div>`;
-    }
-    const sizes = tileSizes(), ed = _editLayout;
-    const bar = `<div class="dash-edit-bar"><button class="tbtn dash-edit ${ed ? 'on' : ''}" onclick="toggleEditLayout()">${ed ? '✓ Done' : '⤢ Edit layout'}</button>${ed ? '<span class="dash-edit-hint">Drag a tile to move it · drag the corner ◢ to resize · saves automatically</span>' : ''}</div>`;
-    const slot = t => {
-        const sz = sizes[t.key] || {};
-        const c = Math.max(1, Math.min(3, Number(sz.c) || 1)), h = Number(sz.h) || 0;
-        const style = `grid-column:span ${c};` + (h ? `height:${h}px;` : '');
-        const cls = 'ig-slot' + (ed ? ' editing' : '') + (h ? ' sized' : '');
-        return `<div class="${cls}" ${ed ? 'draggable="true"' : ''} data-tilekey="${esc(t.key)}" style="${style}"${ed ? ' title="Drag to move · drag the corner to resize"' : ''}>${t.kind === 'ig' ? igTile(t.def) : renderCustomTile(t.tile)}${ed ? `<span class="tile-resize" data-tilekey="${esc(t.key)}"></span>` : ''}</div>`;
-    };
-    return `${bar}<div class="ig-grid${ed ? ' editing' : ''}" id="igGrid" style="margin-bottom:18px">${tiles.map(slot).join('')}</div>`;
-}
 let _dragKey = null;
-async function reorderTile(src, target) {
-    const keys = orderedTiles().map(t => t.key);
-    const from = keys.indexOf(src); if (from < 0) return;
-    keys.splice(from, 1);
-    let to = target ? keys.indexOf(target) : keys.length; if (to < 0) to = keys.length;
-    keys.splice(to, 0, src);
-    Store.settings = Object.assign({}, Store.settings, { tileOrder: keys });
-    render();
-    await saveSettings({ tileOrder: keys }, 'Layout saved');
-}
-function initTileDnd() {
-    document.addEventListener('dragstart', e => { if (!_editLayout || _resizing) { e.preventDefault(); return; } if (e.target.closest && e.target.closest('.tile-resize')) { e.preventDefault(); return; } const s = e.target.closest && e.target.closest('.ig-slot'); if (!s) return; _dragKey = s.dataset.tilekey; s.classList.add('dragging'); if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'; });
-    document.addEventListener('dragend', () => { _dragKey = null; document.querySelectorAll('.ig-slot.dragging,.ig-slot.drop-into').forEach(s => s.classList.remove('dragging', 'drop-into')); });
-    document.addEventListener('dragover', e => { if (!_dragKey) return; const s = e.target.closest && e.target.closest('.ig-slot'); if (!s) return; e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'; if (!s.classList.contains('dragging')) { document.querySelectorAll('.ig-slot.drop-into').forEach(x => x !== s && x.classList.remove('drop-into')); s.classList.add('drop-into'); } });
-    document.addEventListener('drop', e => { if (!_dragKey) return; const s = e.target.closest && e.target.closest('.ig-slot'); if (!s) return; e.preventDefault(); const target = s.dataset.tilekey; const src = _dragKey; _dragKey = null; if (target && target !== src) reorderTile(src, target); });
-    // Corner-resize a tile in edit mode: horizontal drag → column span (1–3), vertical → height.
-    document.addEventListener('pointerdown', e => {
-        const h = e.target.closest && e.target.closest('.tile-resize'); if (!h || !_editLayout) return;
-        e.preventDefault(); e.stopPropagation();
-        const slot = h.closest('.ig-slot'), key = h.dataset.tilekey, grid = document.getElementById('igGrid'); if (!slot || !grid) return;
-        const cols = (getComputedStyle(grid).gridTemplateColumns.match(/\S+/g) || ['1']).length;
-        const colW = (grid.clientWidth + 18) / Math.max(1, cols);   // one track + one gap
-        const sz = Object.assign({ c: 1, h: 0 }, tileSizes()[key]);
-        const startX = e.clientX, startY = e.clientY, startC = Math.max(1, Math.min(3, Number(sz.c) || 1)), startH = Number(sz.h) || slot.offsetHeight;
-        const cur = { c: startC, h: startH };
-        _resizing = true; slot.classList.add('sized'); document.body.style.userSelect = 'none';
-        const move = ev => { cur.c = Math.max(1, Math.min(3, startC + Math.round((ev.clientX - startX) / colW))); cur.h = Math.max(140, Math.round(startH + (ev.clientY - startY))); slot.style.gridColumn = 'span ' + cur.c; slot.style.height = cur.h + 'px'; };
-        const up = async () => {
-            document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up);
-            _resizing = false; document.body.style.userSelect = '';
-            const ns = Object.assign({}, tileSizes()); ns[key] = { c: cur.c, h: cur.h };
-            Store.settings = Object.assign({}, Store.settings, { tileSize: ns });
-            try { await saveSettings({ tileSize: ns }, 'Layout saved'); } catch (err) {}
-        };
-        document.addEventListener('pointermove', move); document.addEventListener('pointerup', up);
-    });
-}
 /* =========================== HOME (Slate redesign) =========================== */
 /* ═══════════ HOME — the System Bus (attention horizon → vitals bus → service timeline) ═══════════ */
 /* ═══════════ OVERVIEW — the Mission-Control command deck ═══════════ */
@@ -4219,12 +4148,6 @@ function homeFoot() {
     if (w.isp || w.ip) parts.push([w.isp, w.ip].filter(Boolean).join(' · '));
     parts.push('updated ' + fmtAgo(Store.lastUpdate));
     return `<footer class="home-foot">${parts.map((p, i) => `${i ? '<span class="foot-sep">·</span>' : ''}<span>${esc(p)}</span>`).join('')}</footer>`;
-}
-function customTilesSection() {
-    if (!enabledIntegrations().length && !customTiles().length) return '';   // discovery prompt lives in Settings, not on a complete Home
-    const grid = renderIntegrationGrid();
-    if (!grid) return '';
-    return `<section style="margin-top:var(--s-2)"><div class="floor-head" style="margin-bottom:var(--s-3)"><span class="panel-title">Your tiles</span></div>${grid}</section>`;
 }
 function homeWelcome() {
     let disc = []; try { disc = discoverIntegrations() || []; } catch (e) {}
@@ -7347,7 +7270,6 @@ if (window.__CC_DEMO__) {
     History.mediaBitrate = seed(N, i => 55000 + 8000 * Math.sin(i / 7));
 }
 render();         // first paint with whatever we have (settings injected)
-initTileDnd();    // legacy tile-grid DnD (inert now the home board owns editing)
 initBoard();      // true pointer drag-and-drop + resize for the whole home board
 /* PWA: register the service worker (offline app-shell + installability). The tab/app
    icons + manifest are static <link>s served by the server (/icon.svg, /icon-*.png,

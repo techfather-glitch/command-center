@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- **The legacy integration tile grid**, which had been unreachable since the home board took over tiles in
+  2.9.13 — it rendered on no route. Gone with it: `renderIntegrationGrid`, `customTilesSection`, the HTML5
+  drag-and-drop reorder handlers, the corner-resize listener and the `.ig-grid` / `.ig-slot` / `.tile-resize`
+  styles (~80 lines). No user-visible change; the home board was already the only tile surface. Saved
+  `tileOrder` is still read, so any ordering you had is preserved.
+
 ## [2.9.25] — 2026-07-18
 
 ### Changed
