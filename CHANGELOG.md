@@ -4,7 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.9.26] — 2026-07-18
+
+### Added
+- **Capability build — the under-surfaced tiles (reads batch 3).** Three integrations that were showing
+  almost nothing now report what their APIs actually expose:
+  - **Authentik** (was 2 fields, now 8): **active sessions**, **configured applications**, **unread admin
+    alerts**, **background-task errors**, **connected workers** (0 workers means task processing is down),
+    plus the running version and an **update-available** flag when a newer release exists.
+  - **CoinGecko** (was price rows only): a real headline tile from `/global` — **total market cap**,
+    **24h change**, **24h volume**, **BTC / ETH dominance** and the **active-coin count**. This needs no
+    configuration, so the tile is useful before you set any coin IDs; your watchlist still lists below it.
+  - **Vaultwarden**: **version**, **build hash**, and whether **signups are open** (flagged amber when they
+    are — an open registration on a self-hosted vault is usually not intended).
 
 ### Removed
 - **The legacy integration tile grid**, which had been unreachable since the home board took over tiles in
