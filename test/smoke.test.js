@@ -514,3 +514,37 @@ test('PWA icons are valid decodable PNGs and the manifest/SW are well-formed', (
   assert.doesNotThrow(() => new Function(cc.CC_SW), 'sw.js is valid JS');
   assert.match(cc.CC_ICON_SVG, /^<svg/);
 });
+
+// -- Collection totals that live in a response header, not the body (Gitea/Forgejo) --
+// The runner collects per-request { status, headers } into ctx.meta; normalize must prefer
+// X-Total-Count over the returned array, which is only ever one page long.
+test('header-borne totals are preferred over page length, with safe fallbacks', () => {
+  const g = cc.INTEGRATIONS.gitea;
+  const meta = (o) => ({ meta: Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { status: 200, headers: { 'x-total-count': String(v) } }])) });
+  const val = (out, label) => (out.fields.find(f => f.label === label) || {}).value;
+
+  // limit=1 body carries one row; the header carries the real total.
+  const body = { version: { version: '1.22.3' }, notif: [{ id: 1 }], repos: { ok: true, data: [{ id: 1 }] }, issues: [{ id: 1 }], pulls: [{ id: 1 }] };
+  const withHdr = g.normalize(body, meta({ notif: 7, repos: 28633, issues: 12, pulls: 3 }));
+  assert.equal(val(withHdr, 'Repos'), 28633, 'reads the header, not the 1-row page');
+  assert.equal(val(withHdr, 'Notifications'), 7);
+  assert.equal(val(withHdr, 'Open issues'), 12);
+  assert.equal(val(withHdr, 'Open PRs'), 3);
+
+  // No header (older build / proxy strips it) -> fall back to the array length.
+  const noHdr = g.normalize(body, { meta: {} });
+  assert.equal(val(noHdr, 'Repos'), 1, 'falls back to page length rather than vanishing');
+
+  // A junk header must never reach the tile as NaN.
+  const junk = g.normalize(body, { meta: { repos: { headers: { 'x-total-count': 'not-a-number' } } } });
+  assert.ok(Number.isFinite(val(junk, 'Repos')), 'non-numeric header does not produce NaN');
+
+  // Absent optional reads simply drop their fields.
+  const bare = g.normalize({ version: { version: '1.22.3' } }, { meta: {} });
+  assert.equal(bare.fields.length, 1, 'only Version survives when optional reads are absent');
+
+  // Odd ctx shapes must not throw - normalize is called with ctx from several call sites.
+  for (const c of [undefined, {}, { meta: {} }, { meta: { repos: {} } }]) {
+    assert.doesNotThrow(() => g.normalize(body, c), 'ctx shape ' + JSON.stringify(c));
+  }
+});

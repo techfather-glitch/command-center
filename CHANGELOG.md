@@ -4,6 +4,21 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.29] — 2026-07-18
+
+### Added
+- **The request runner now captures response headers**, not just bodies. Some APIs report collection
+  totals in an `X-Total-Count` header while the body returns only one page — previously the only options
+  were to under-report or fetch everything. Adapters can now read the header directly.
+- **Gitea / Forgejo** (the last integration still showing almost nothing) reports **repositories**,
+  **open issues**, **open pull requests** and **unread notifications** — all as true totals via the new
+  header support, each request asking for a single row so the tile stays cheap.
+
+### Fixed
+- **Gitea's notification count was capped at the page size.** It counted the returned array from a
+  `limit=50` request, so 200 unread notifications displayed as 50. It now reads the real total, and falls
+  back to the array length only when a build or proxy doesn't send the header.
+
 ## [2.9.28] — 2026-07-18
 
 ### Added
