@@ -4,6 +4,19 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.32] — 2026-07-18
+
+### Added
+- **Capability build — reads batch 6.**
+  - **Paperless-ngx**: a **storage gauge**, **documents needing attention** (failed imports), documents
+    **processing**, a **service-health** line covering the database / Redis / Celery / index workers, and
+    an **update-available** flag. A stuck consumer used to be completely invisible.
+  - **Overseerr / Jellyseerr**: **open issues**, version, **update-available** (with how many commits
+    behind) and a **restart-required** flag.
+  - **Nextcloud**: **maintenance mode** and **database-upgrade-needed** — both amber, because a Nextcloud
+    silently sitting in maintenance mode looks identical to a healthy one on a tile.
+  - **Portainer**: version and **update-available**.
+
 ## [2.9.31] — 2026-07-18
 
 ### Added
