@@ -4,6 +4,24 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.31] — 2026-07-18
+
+### Added
+- **Service control — one master switch for every write action.** Command Center has always been
+  read-only by default; this is the opt-in that lets it *send* commands (pause a download, trigger a
+  scan, resume DNS blocking) using the credentials you already saved.
+  - The switch lives at the top of **Settings → Providers**, is **off by default**, and explains what
+    turning it on permits. Control buttons only appear on provider cards while it's on.
+  - **The server enforces it independently** — a stale browser tab or a hand-crafted POST is refused
+    with a 403 and the attempt is written to the audit log. The UI check only decides whether to draw
+    the buttons.
+  - Every action now declares a **risk level** (`safe` / `write` / `destructive`). Destructive actions
+    are refused server-side unless the request carries an explicit confirmation, so a UI bug can't
+    silently trigger one, and they ask before running.
+- **More actions**, all behind that switch: **Sonarr / Radarr / Lidarr** RSS sync, search-missing and
+  refresh-queue; **Prowlarr** sync-apps; **Pi-hole v6** pause blocking for 5 or 30 minutes and resume —
+  the pauses carry a timer so filtering restores itself rather than staying off silently.
+
 ## [2.9.30] — 2026-07-18
 
 ### Added

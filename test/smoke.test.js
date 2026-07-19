@@ -590,3 +590,49 @@ test('Pi-hole v6 login descriptor matches the documented auth exchange', () => {
   assert.ok(!v5.login, 'v5 has no session login');
   assert.notEqual(v5.id, v6.id);
 });
+
+// -- Service control: the master switch and the destructive-action gate --
+// Two independent gates guard every write: the route refuses when the global switch is off,
+// and the runner refuses anything destructive without an explicit confirm.
+test('every declared action is well-formed and risk-labelled', () => {
+  const all = [];
+  for (const [id, d] of Object.entries(cc.INTEGRATIONS)) for (const a of (d.actions || [])) all.push({ id, a });
+  assert.ok(all.length > 0, 'there are actions to check');
+  for (const { id, a } of all) {
+    assert.ok(a.id && a.label && a.path, id + ':' + a.id + ' has id/label/path');
+    assert.ok(['safe', 'write', 'destructive'].includes(a.risk), id + ':' + a.id + ' declares a valid risk (got ' + a.risk + ')');
+    // An action path must never interpolate credentials or config - only explicit params.
+    assert.ok(!/\{\{(?!param\.)/.test(a.path), id + ':' + a.id + ' path templates only {{param.*}}');
+  }
+});
+
+test('destructive actions are refused without an explicit confirm', async () => {
+  const fake = { id: 'x', auth: { type: 'none' }, actions: [
+    { id: 'boom', label: 'Delete everything', method: 'POST', path: '/nope', risk: 'destructive' },
+    { id: 'tap', label: 'Poke', method: 'POST', path: '/nope', risk: 'write' }
+  ] };
+  const dead = 'http://127.0.0.1:9';   // nothing listens here; the gate must trip before any I/O
+  const refused = (r) => r.ok === false && /confirmation required/i.test(r.error || '');
+
+  assert.ok(refused(await cc.runIntegrationAction(fake, dead, {}, {}, 'boom', {}, {})), 'no confirm');
+  assert.ok(refused(await cc.runIntegrationAction(fake, dead, {}, {}, 'boom', {}, undefined)), 'opts omitted');
+  assert.ok(refused(await cc.runIntegrationAction(fake, dead, {}, {}, 'boom', {}, { confirm: 'true' })), 'string "true" is not a confirm');
+  assert.ok(refused(await cc.runIntegrationAction(fake, dead, {}, {}, 'boom', {}, { confirm: 1 })), 'truthy 1 is not a confirm');
+
+  const unknown = await cc.runIntegrationAction(fake, dead, {}, {}, 'nope', {}, { confirm: true });
+  assert.match(unknown.error || '', /unknown action/i, 'undeclared action ids are rejected');
+
+  // A non-destructive action clears the gate and then fails on the network, not on confirm.
+  const net = await cc.runIntegrationAction(fake, dead, {}, {}, 'tap', {}, {});
+  assert.equal(net.ok, false);
+  assert.ok(!/confirmation required/i.test(net.error || ''), 'write-risk action is not confirm-gated');
+});
+
+test('the secret auth type asks for one vaulted credential and no username', () => {
+  const f = cc.igAuthFields({ type: 'secret', field: 'password', label: 'App password' });
+  assert.equal(f.length, 1);
+  assert.equal(f[0].name, 'password');
+  assert.equal(f[0].kind, 'secret');
+  assert.equal(f[0].label, 'App password');
+  assert.ok(cc.SECRET_FIELDS.has(f[0].name), 'the field name is on the vault allow-list');
+});

@@ -1866,6 +1866,10 @@
     .intel-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--hair); }
     .intel-row:first-child { border-top: 0; }
     .intel-msg { flex: 1; font: var(--f-row); color: var(--t2); min-width: 0; }
+    .svc-ctrl { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; padding: 11px 13px; margin-bottom: 12px; border-radius: var(--r); border: 1px solid var(--hair); background: var(--s0); }
+    .svc-ctrl.on { border-color: color-mix(in srgb, var(--live) 45%, var(--hair)); box-shadow: inset 2px 0 0 var(--live); }
+    .svc-ctrl .uctl-switch b { color: var(--text-1); font-weight: 600; }
+    .svc-ctrl-note { flex: 1; min-width: 200px; font-size: 12px; color: var(--muted); }
     .pv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
     .pv-card { background: var(--s0); border: 1px solid var(--hair); border-radius: var(--r); padding: 12px 13px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
     .pv-card[data-state="warn"] { box-shadow: inset 2px 0 0 var(--warn); }
@@ -5547,6 +5551,16 @@ function clientRow(c) {
    gated behind settings.unifiControl (a UI toggle) and sent server-side with the saved
    controller login. Nothing is written unless the user turns the switch on. ── */
 function unifiControlEnabled() { return !!(Store.settings && Store.settings.unifiControl); }
+/* Master gate for every provider write-action. The server checks this independently — this
+   copy only decides whether to render the buttons at all. */
+function serviceControlEnabled() { return !!(Store.settings && Store.settings.serviceControl); }
+window.toggleServiceControl = async function () {
+    const on = !serviceControlEnabled();
+    if (on && !confirm('Allow Command Center to send commands to your services?\n\nIt will be able to pause downloads, trigger scans, restart containers and similar — using the credentials you already saved. Destructive actions always ask for confirmation first.\n\nYou can turn this off again at any time.')) return;
+    Store.settings = Object.assign({}, Store.settings, { serviceControl: on });
+    render();
+    await saveSettings({ serviceControl: on }, on ? 'Service control enabled' : 'Service control disabled');
+};
 function unifiDevicesAll() { const u = Store.unifi || {}; return [].concat((u.gateway && u.gateway.devices) || [], (u.switches && u.switches.devices) || [], (u.aps && u.aps.devices) || []); }
 window.toggleUnifiControl = async function () { const on = !unifiControlEnabled(); Store.settings = Object.assign({}, Store.settings, { unifiControl: on }); render(); await saveSettings({ unifiControl: on }, on ? 'Device control enabled' : 'Device control disabled'); };
 window.unifiLed = async function (params, btn) {
@@ -6384,14 +6398,23 @@ window.runProviderAction = async function (id, actionId) {
     const cat = (Store.integrations || []).find(x => x.id === id);
     const act = cat && (cat.actions || []).find(a => a.id === actionId);
     if (!act) return;
-    if (act.confirm && !confirm(`Run "${act.label}" on ${cat.title}? This affects the live service.`)) return;
+    if (!serviceControlEnabled()) { toast('Service control is off — turn it on in Settings to allow actions'); return; }
+    const destructive = act.risk === 'destructive' || act.danger;
+    const ask = destructive
+        ? `${act.label} on ${cat.title}?\n\nThis is destructive and cannot be undone.`
+        : `Run "${act.label}" on ${cat.title}? This affects the live service.`;
+    if ((act.confirm || destructive) && !confirm(ask)) return;
     const params = {};
     for (const pr of (act.params || [])) { const v = prompt((pr.label || pr.name) + ':'); if (v == null) return; params[pr.name] = v; }
     const el = document.getElementById('ptest_' + cssId(id));
     const say = (t, cls) => { if (el) { el.textContent = t; el.className = 'ig-test-res' + (cls ? ' ' + cls : ''); } else if (cls !== null) toast(t); };
     say(act.label + '…', '');
     try {
-        const r = await jpost('/api/integration/action', { type: id, action: actionId, params });
+        // The server refuses a destructive action without this, so it is only ever set on the
+        // path where the user actually answered the confirm dialog above.
+        const payload = { type: id, action: actionId, params };
+        if (destructive) payload.confirm = true;
+        const r = await jpost('/api/integration/action', payload);
         say(r.ok ? '✓ ' + act.label : '✗ ' + (r.error || 'failed'), r.ok ? 'ok' : 'bad');
         if (r.ok) toast(act.label + ' sent');
     } catch (e) { say('✗ ' + e.message, 'bad'); }
@@ -6736,7 +6759,7 @@ function providerCard(p) {
             <button class="tbtn" onclick="openProviderCfg('${esc(p.id)}')">Configure</button>
             <button class="tbtn" onclick="testProvider('${esc(p.id)}')">Test</button>
             ${String(p.id).split('#')[0] === 'tailscale' && cat && cat.enabled ? `<button class="tbtn" onclick="openTsDrawer('${esc(p.id)}')">Devices ↗</button>` : ''}
-            ${cat && cat.enabled && cat.actions ? cat.actions.map(a => `<button class="tbtn${a.danger ? ' danger' : ''}" onclick="runProviderAction('${esc(p.id)}','${esc(a.id)}')" title="Control action">${esc(a.label)}</button>`).join('') : ''}
+            ${cat && cat.enabled && cat.actions && serviceControlEnabled() ? cat.actions.map(a => `<button class="tbtn${a.danger ? ' danger' : ''}" onclick="runProviderAction('${esc(p.id)}','${esc(a.id)}')" title="${a.risk === 'destructive' ? 'Destructive — asks for confirmation' : 'Control action'}">${esc(a.label)}</button>`).join('') : ''}
             ${cat && cat.enabled ? `<button class="tbtn danger" onclick="igDisable('${esc(p.id)}')">Disable</button>` : ''}
             ${p.links && p.links.open ? `<button class="tbtn" onclick="window.open('${esc(p.links.open)}','_blank','noopener')">Open ↗</button>` : ''}
             <span class="ig-test-res" id="ptest_${cssId(p.id)}"></span>
@@ -6789,7 +6812,17 @@ function settingsProviders() {
         <b>Find services on a host</b><div class="set-desc">Scans one machine across every port the catalog knows — whatever answers becomes a one-click add with its address prefilled.</div>
         <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input class="set-input" id="discHost" placeholder="192.168.1.10" value="${esc(_discState.host || discSuggestHost())}" style="max-width:220px" onkeydown="if(event.key==='Enter')runDiscover()"><button class="tbtn primary" onclick="runDiscover()" ${_discState.busy ? 'disabled' : ''}>${_discState.busy ? 'Scanning…' : 'Scan'}</button></div>
         ${discResults()}</div></div>`;
-    return `${discBar}<div class="pv-grid">${provs.map(providerCard).join('')}
+    const sc = serviceControlEnabled();
+    const nActs = (Store.integrations || []).filter(c => c.enabled).reduce((a, c) => a + ((c.actions || []).length), 0);
+    // One switch in front of every write action, mirroring the UniFi opt-in. Off by default;
+    // the server enforces it too, so an old tab or a direct POST can't get around it.
+    const ctrlBar = `<div class="svc-ctrl${sc ? ' on' : ''}">
+        <label class="uctl-switch"><input type="checkbox" ${sc ? 'checked' : ''} onchange="toggleServiceControl()"> <b>Service control</b></label>
+        <span class="svc-ctrl-note">${sc
+            ? `On — control buttons appear on connected providers${nActs ? ` (${nActs} available)` : ''}. Destructive actions still ask first.`
+            : 'Off — Command Center only reads from your services. Turn this on to allow it to send commands (pause a download, trigger a scan, restart a container).'}</span>
+    </div>`;
+    return `${ctrlBar}${discBar}<div class="pv-grid">${provs.map(providerCard).join('')}
         <button class="pv-card pv-add" onclick="toggleSetCatalog()"><span class="pv-add-plus">+</span><span class="pv-name">Add provider</span><span class="pv-meta">${(Store.integrations || []).length - enabledIntegrations().length} available in the catalog</span></button>
     </div>
     ${_setCatalogOpen ? `<div style="margin-top:14px">${igCatalogCard()}</div>` : ''}
