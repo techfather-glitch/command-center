@@ -57,6 +57,39 @@ docker compose up -d
 A ready-to-edit copy lives in the repo root, and an `.env.example` documents
 every variable.
 
+### Automatic updates (Watchtower)
+
+The `docker-compose.yml` in the repo root also ships a
+[Watchtower](https://containrrr.dev/watchtower/) service that pulls new releases
+and restarts Command Center for you:
+
+```yaml
+  command-center:
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_LABEL_ENABLE=true    # only containers carrying the label above
+      - WATCHTOWER_CLEANUP=true         # remove the superseded image
+      - WATCHTOWER_POLL_INTERVAL=86400  # check daily
+    restart: unless-stopped
+```
+
+`WATCHTOWER_LABEL_ENABLE` is the important part: Watchtower only updates
+containers that carry the opt-in label, so adding it here will **not** start
+auto-updating the rest of your stack. Two things to weigh before enabling it —
+it mounts the Docker socket (root-equivalent control of the host), and updates
+land unattended. If you would rather approve each upgrade, pin `image:` to a
+version tag and update by hand:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
 ## Bare Node.js
 
 Requires **Node.js 20+** (uses the built-in global `WebSocket` and `fetch`).

@@ -2,6 +2,9 @@
 #   1. (optional) edit the values below — a sign-in password, your external URL
 #   2. docker compose up -d
 #   3. open http://localhost:8888
+# Ships with Watchtower (bottom of this file) to keep Command Center updated on
+# its own. It is scoped by label so it touches nothing else on the host — read
+# the notes there before you run it, or delete the service to opt out.
 # The container runs as root so it can write to ./data regardless of who owns the
 # host folder. To run unprivileged instead, add `user: "1000:1000"` and make
 # ./data writable by that uid.
@@ -35,4 +38,39 @@ services:
       # Uncomment to accept self-signed upstreams (or use NODE_EXTRA_CA_CERTS):
       # - ALLOW_INSECURE_TLS=1
       # - DEMO=1                    # uncomment to explore with fully synthetic data
+    labels:
+      # Opts this container in to the Watchtower service below. Remove this line
+      # to stop auto-updates while leaving Watchtower running for other things.
+      - "com.centurylinklabs.watchtower.enable=true"
+    restart: unless-stopped
+
+  # Watchtower — pulls new Command Center releases and restarts the container.
+  # Scoped deliberately: WATCHTOWER_LABEL_ENABLE means it only touches containers
+  # carrying the label above, so it will NOT auto-update anything else on this
+  # host. Drop that variable to have it watch every container instead.
+  #
+  # Trade-offs worth knowing before you run this:
+  #   • It mounts the Docker socket, which is root-equivalent control of the host.
+  #     Only run images you trust with it.
+  #   • Updates land unattended — a new release can restart the container while
+  #     you're not looking. Pin `image:` above to a version (e.g. :2.9.24) if you
+  #     would rather approve each upgrade yourself.
+  # Not interested? Delete this service and the label above; nothing else depends
+  # on it. Manual updates stay `docker compose pull && docker compose up -d`.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - TZ=UTC
+      - WATCHTOWER_LABEL_ENABLE=true   # only update containers labelled above
+      - WATCHTOWER_CLEANUP=true        # delete the superseded image so disk doesn't creep
+      - WATCHTOWER_POLL_INTERVAL=86400 # check once a day (seconds)
+      # Prefer a fixed time over an interval? Swap POLL_INTERVAL for a cron
+      # schedule — this one is 4am daily:
+      # - WATCHTOWER_SCHEDULE=0 0 4 * * *
+      # Notifications on update (Gotify, Discord, e-mail, …) — see
+      # https://containrrr.dev/watchtower/notifications/
+      # - WATCHTOWER_NOTIFICATION_URL=gotify://gotify.example.com/token
     restart: unless-stopped

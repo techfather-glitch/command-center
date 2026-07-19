@@ -4,6 +4,15 @@ All notable changes to Command Center are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Watchtower in `docker-compose.yml`** for hands-off updates: it pulls new Command Center releases and
+  restarts the container. Scoped with `WATCHTOWER_LABEL_ENABLE` plus an opt-in label on the Command Center
+  service, so it updates *only* Command Center and leaves the rest of your stack alone. Documented in
+  INSTALL.md, including the two trade-offs (it mounts the Docker socket; updates land unattended) and how
+  to opt out.
+
 ## [2.9.24] — 2026-07-18
 
 ### Changed
